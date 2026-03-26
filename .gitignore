@@ -1,0 +1,37 @@
+# --- OS Specific ---
+.DS_Store
+Thumbs.db
+
+# --- IDEs & Editors (JetBrains, VS Code, Sublime) ---
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+.history/
+
+# --- Python & Environment ---
+.venv/
+venv/
+ENV/
+lib/
+bin/
+__pycache__/
+*.py[cod]
+*$py.class
+# Distribution / Build
+dist/
+build/
+*.egg-info/
+
+# --- Project Specific Data (Local Staging & Secrets) ---
+# Do not commit actual data dumps or credentials
+raw-data/
+output/
+.env
+config.json
+manifest.json
+
+# --- Documentation Artifacts ---
+# If you generate local PDFs/HTML for testing
+*.pdf
+*.log

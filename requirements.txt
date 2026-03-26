@@ -1,0 +1,8 @@
+beautifulsoup4
+pandoc
+pypandoc
+requests
+tqdm
+weasyprint
+lxml
+playwright==1.48.0
