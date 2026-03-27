@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/ "null"), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html "null").
 
+## [3.0.1] - 2026-03-27
+
+Refinements for offline rendering and user experience.
+
+### Added
+- **Jira Macro Opt-In:** Added `--mhtml-jira` flag to force Playwright rendering for fully populated Jira inline macros (titles and status).
+
+### Changed
+- **Unified Pre-flight Checks:** Combined VPN and Playwright authentication checks into a single interactive prompt, allowing users to safely connect to VPN before browser launch or skip re-authentication.
+- **Log Localization:** Translated all `html_processor.py` log messages and warnings to English for consistency.
+
+### Fixed
+- **PlantUML Images:** Fixed an issue where dynamically rendered Confluence REST images (like PlantUML) were missing in offline exports. They are now explicitly downloaded and linked locally.
+- **Jira Macro Placeholders:** Aggressively cleaned up incomplete API placeholders ("Getting issue details...", "STATUS") from Jira macros when not using the `--mhtml-jira` flag.
+
 ## [3.0.0] - 2026-03-24
 
 Major architectural redesign to a resilient ETL (Extract, Transform, Load) Pipeline.

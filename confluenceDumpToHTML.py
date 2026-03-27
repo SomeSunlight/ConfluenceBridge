@@ -72,8 +72,9 @@ def get_run_title(args, base_url, platform_config, auth_info):
         return f"Export {args.label}"
     elif args.command in ('single', 'tree'):
         try:
-            context_path = args.context_path
-            page_data = myModules.get_page_basic(args.pageid, base_url, platform_config, auth_info, context_path)
+            from confluence_dump.api.client import ConfluenceClient
+            client = ConfluenceClient(base_url, platform_config, auth_info, args.context_path)
+            page_data = client.get_page_basic(args.pageid)
             if page_data and 'title' in page_data:
                 return page_data['title']
             else:
@@ -576,7 +577,7 @@ def build_index_html(output_dir, css_files=None):
 
 # --- Recursive Inventory & Scanning ---
 
-def recursive_scan(page_id, args, exclude_ids, scanned_count, exclude_label=None):
+def recursive_scan(client, page_id, exclude_ids, scanned_count, exclude_label=None):
     if page_id in exclude_ids:
         print(f"  [Excluded by ID] Pruning tree at page {page_id}", file=sys.stderr)
         return []
@@ -588,7 +589,7 @@ def recursive_scan(page_id, args, exclude_ids, scanned_count, exclude_label=None
         sys.stderr.flush()
 
     while True:
-        children_data = myModules.get_child_pages(page_id, args.base_url, platform_config, auth_info, args.context_path)
+        children_data = client.get_child_pages(page_id)
         if not children_data or 'results' not in children_data: break
         children = children_data['results']
         if not children: break
@@ -601,44 +602,42 @@ def recursive_scan(page_id, args, exclude_ids, scanned_count, exclude_label=None
                     print(f"  [Excluded by Label '{exclude_label}'] Pruning tree at page {child_id}", file=sys.stderr)
                     continue
             collect_page_metadata(child)
-            tree_ids.extend(recursive_scan(child_id, args, exclude_ids, scanned_count, exclude_label))
+            tree_ids.extend(recursive_scan(client, child_id, exclude_ids, scanned_count, exclude_label))
         break
     return tree_ids
 
 
-def scan_space_inventory(args, exclude_ids):
+def scan_space_inventory(client, args, exclude_ids):
     print("Phase 1: Recursive Inventory Scan...")
     scanned_count = [0]
-    homepage = myModules.get_space_homepage(args.space_key, args.base_url, platform_config, auth_info,
-                                            args.context_path)
+    homepage = client.get_space_homepage(args.space_key)
     if not homepage:
         print("Error: Could not find Space Homepage.", file=sys.stderr)
         return [], []
     root_id = homepage['id']
     collect_page_metadata(homepage)
-    all_ids_ordered = recursive_scan(root_id, args, exclude_ids, scanned_count)
+    all_ids_ordered = recursive_scan(client, root_id, exclude_ids, scanned_count)
     print(f"\nInventory complete. Found {len(all_ids_ordered)} pages.")
     return set(all_ids_ordered), all_ids_ordered
 
 
-def scan_tree_inventory(root_id, args, exclude_ids):
+def scan_tree_inventory(client, root_id, args, exclude_ids):
     print("Phase 1: Recursive Tree Scan...")
     scanned_count = [0]
-    root_page = myModules.get_page_full(root_id, args.base_url, platform_config, auth_info, args.context_path)
+    root_page = client.get_page_basic(root_id)
     if root_page: collect_page_metadata(root_page)
-    all_ids_ordered = recursive_scan(root_id, args, exclude_ids, scanned_count)
+    all_ids_ordered = recursive_scan(client, root_id, exclude_ids, scanned_count)
     print(f"\nInventory complete. Found {len(all_ids_ordered)} pages.")
     return set(all_ids_ordered), all_ids_ordered
 
 
-def scan_label_forest_inventory(args, exclude_ids):
+def scan_label_forest_inventory(client, args, exclude_ids):
     print(f"Phase 1: Label Forest Scan (Roots: '{args.label}')...")
     scanned_count = [0]
     root_pages = []
     start = 0
     while True:
-        res = myModules.get_pages_by_label(args.label, start, 200, args.base_url, platform_config, auth_info,
-                                           args.context_path)
+        res = client.get_pages_by_label(args.label, start, 200)
         if not res or not res.get('results'): break
         for p in res['results']:
             if p['id'] in exclude_ids: continue
@@ -649,7 +648,7 @@ def scan_label_forest_inventory(args, exclude_ids):
     exclude_label = getattr(args, 'exclude_label', None)
     for root in root_pages:
         collect_page_metadata(root)
-        branch_ids = recursive_scan(root['id'], args, exclude_ids, scanned_count, exclude_label)
+        branch_ids = recursive_scan(client, root['id'], exclude_ids, scanned_count, exclude_label)
         full_forest_ids.extend(branch_ids)
     unique_ordered = list(dict.fromkeys(full_forest_ids))
     print(f"\nInventory complete. Found {len(unique_ordered)} unique pages.")
@@ -673,8 +672,9 @@ def run_analysis_phase(args, manifest, verbose: bool = True):
     from confluence_dump.analysis.mhtml_detector import MHTMLDetector
     
     raw_data_dir = Path(args.outdir) / 'raw-data'
+    mhtml_jira = getattr(args, 'mhtml_jira', False)
     
-    detector = MHTMLDetector(raw_data_dir, manifest)
+    detector = MHTMLDetector(raw_data_dir, manifest, mhtml_jira=mhtml_jira)
     stats = detector.analyze_all_pages(verbose=verbose)
     
     return stats
@@ -787,6 +787,9 @@ def run_download_phase(args, all_pages_list, target_ids, active_css_files):
         # Initialize manifest ONCE before download
         manifest = Manifest(raw_data_dir)
         
+        # Update manifest with fresh sort order on every sync
+        manifest.set_tree_order(all_pages_list)
+        
         # Phase 1: Extract (Download)
         print(f"Phase 1 (Extract): Downloading {len(all_pages_list)} pages with {args.threads} threads...")
         with ThreadPoolExecutor(max_workers=args.threads) as executor:
@@ -829,21 +832,27 @@ def run_download_phase(args, all_pages_list, target_ids, active_css_files):
 
 def handle_space(args, active_css_files, exclude_ids):
     print(f"Starting 'space' dump for {args.space_key}")
-    target_ids, all_pages_list = scan_space_inventory(args, exclude_ids)
+    from confluence_dump.api.client import ConfluenceClient
+    client = ConfluenceClient(args.base_url, platform_config, auth_info, args.context_path)
+    target_ids, all_pages_list = scan_space_inventory(client, args, exclude_ids)
     save_sidebars(args.outdir, target_ids)
     run_download_phase(args, all_pages_list, target_ids, active_css_files)
 
 
 def handle_tree(args, active_css_files, exclude_ids):
     print(f"Starting 'tree' dump for {args.pageid}")
-    target_ids, all_pages_list = scan_tree_inventory(args.pageid, args, exclude_ids)
+    from confluence_dump.api.client import ConfluenceClient
+    client = ConfluenceClient(args.base_url, platform_config, auth_info, args.context_path)
+    target_ids, all_pages_list = scan_tree_inventory(client, args.pageid, args, exclude_ids)
     save_sidebars(args.outdir, target_ids)
     run_download_phase(args, all_pages_list, target_ids, active_css_files)
 
 
 def handle_label(args, active_css_files, exclude_ids):
     print(f"Starting 'label' dump for {args.label}")
-    target_ids, all_pages_list = scan_label_forest_inventory(args, exclude_ids)
+    from confluence_dump.api.client import ConfluenceClient
+    client = ConfluenceClient(args.base_url, platform_config, auth_info, args.context_path)
+    target_ids, all_pages_list = scan_label_forest_inventory(client, args, exclude_ids)
     save_sidebars(args.outdir, target_ids)
     run_download_phase(args, all_pages_list, target_ids, active_css_files)
 
@@ -860,6 +869,9 @@ def handle_single(args, active_css_files, exclude_ids):
         
         raw_data_dir = Path(args.outdir) / 'raw-data'
         manifest = Manifest(raw_data_dir)
+        
+        # Update manifest with fresh sort order
+        manifest.set_tree_order([args.pageid])
         
         process_page(args.pageid, args, active_css_files, {args.pageid}, verbose=True, manifest=manifest)
         
@@ -889,7 +901,9 @@ def handle_single(args, active_css_files, exclude_ids):
 
 def handle_all_spaces(args, active_css_files, exclude_ids):
     print("Starting 'all-spaces' dump...")
-    spaces = myModules.get_all_spaces(args.base_url, platform_config, auth_info, args.context_path)
+    from confluence_dump.api.client import ConfluenceClient
+    client = ConfluenceClient(args.base_url, platform_config, auth_info, args.context_path)
+    spaces = client.get_all_spaces()
     if spaces and 'results' in spaces:
         for s in spaces['results']:
             print(f"\n--- Processing Space: {s['key']} ---")
@@ -964,7 +978,6 @@ def main():
     g.add_argument('--profile', required=False, help="cloud or dc (required for initial download)")
     g.add_argument('--context-path', default=None, help="Context path (DC only)")
     g.add_argument('--css-file', default=None, help="Path to custom CSS file")
-    g.add_argument('-R', '--rst', action='store_true', help="Also export RST")
     g.add_argument('-t', '--threads', type=int, default=1, help="Number of threads for download (Default: 1)")
     g.add_argument('--exclude-page-id', action='append', help="Exclude a page ID and its children")
     g.add_argument('--no-vpn-reminder', action='store_true', help="Skip the VPN check confirmation for Data Center")
@@ -974,6 +987,7 @@ def main():
     g.add_argument('--no-metadata-json', action='store_true', help="Do not save the JSON metadata file")
     g.add_argument('--use-etl', action='store_true', help="Use new ETL pipeline (Extract to raw-data/)")
     g.add_argument('--skip-mhtml', action='store_true', help="Skip Playwright MHTML downloads for complex pages")
+    g.add_argument('--mhtml-jira', action='store_true', help="Force Playwright MHTML download for Jira Macros (Opt-in for full Jira titles/status)")
     g.add_argument('--init', action='store_true', help="Reset workspace (delete raw-data/, pages/, attachments/)")
     g.add_argument('--build-only', action='store_true', help="Skip download, only rebuild HTML from raw-data/ (offline mode)")
 
@@ -1076,14 +1090,37 @@ def main():
             print(f"     python confluenceDumpToHTML.py --use-etl -o \"{workspace_dir}\"", file=sys.stderr)
             sys.exit(1)
         
-        # Collect metadata from manifest
-        for page_id, page_data in manifest.data['pages'].items():
-            all_pages_metadata.append({
-                'id': page_id,
-                'title': page_data['title'],
-                'parent_id': page_data.get('parent_id')
-            })
-            seen_metadata_ids.add(page_id)
+        # Collect metadata from manifest respecting original order
+        tree_order = manifest.data.get('tree_order', [])
+        
+        if tree_order:
+            for page_id in tree_order:
+                if page_id in manifest.data['pages']:
+                    page_data = manifest.data['pages'][page_id]
+                    all_pages_metadata.append({
+                        'id': page_id,
+                        'title': page_data['title'],
+                        'parent_id': page_data.get('parent_id')
+                    })
+                    seen_metadata_ids.add(page_id)
+            # Fallback for pages that might not be in tree_order
+            for page_id, page_data in manifest.data['pages'].items():
+                if page_id not in seen_metadata_ids:
+                    all_pages_metadata.append({
+                        'id': page_id,
+                        'title': page_data['title'],
+                        'parent_id': page_data.get('parent_id')
+                    })
+                    seen_metadata_ids.add(page_id)
+        else:
+            # Fallback for old manifests without tree_order
+            for page_id, page_data in manifest.data['pages'].items():
+                all_pages_metadata.append({
+                    'id': page_id,
+                    'title': page_data['title'],
+                    'parent_id': page_data.get('parent_id')
+                })
+                seen_metadata_ids.add(page_id)
         
         target_ids = set(manifest.data['pages'].keys())
         
@@ -1330,10 +1367,6 @@ def main():
         platform_config = myModules.load_platform_config(args.profile)
         auth_info = myModules.get_auth_config(platform_config)
 
-        if args.profile == 'dc' and not args.no_vpn_reminder:
-            print("\n[!] DATA CENTER CHECK: Are you connected to the VPN/Intranet?")
-            input("    Press Enter to confirm connection (or Ctrl+C to cancel)...")
-
         # --- Auto-Subfolder Generation (nur bei initialem Download) ---
         if not is_sync:
             timestamp = datetime.now().strftime("%Y-%m-%d %H%M")
@@ -1371,13 +1404,41 @@ def main():
         sys.exit(1)
 
     try:
-        # --- EARLY PLAYWRIGHT AUTH ---
-        # Authenticate once before potentially long download phases begin
-        if hasattr(args, 'use_etl') and args.use_etl and not getattr(args, 'skip_mhtml', False) and not getattr(args, 'build_only', False) and not getattr(args, 'init', False):
-            from confluence_dump.playwright.mhtml_downloader import MHTMLDownloader
-            print(f"\n[INFO] Initialisiere Playwright (frühe Authentifizierung)...")
-            dl = MHTMLDownloader(Path(args.outdir), args.base_url)
-            dl.verify_playwright_auth()
+        # --- PRE-FLIGHT CHECK: VPN & AUTHENTICATION ---
+        requires_playwright = hasattr(args, 'use_etl') and args.use_etl and not getattr(args, 'skip_mhtml', False) and not getattr(args, 'build_only', False) and not getattr(args, 'init', False)
+        requires_vpn = args.profile == 'dc' and not args.no_vpn_reminder
+
+        if requires_vpn or requires_playwright:
+            print("\n" + "="*60)
+            print(" PRE-FLIGHT CHECK: VPN & CONFLUENCE AUTHENTICATION")
+            print("="*60)
+            print(" • You can activate your VPN connection right now, before proceeding.")
+            if requires_playwright:
+                print(" • Playwright needs an active browser session to download complex pages.")
+            
+            print("\nOptions:")
+            print("  [1] Abort (Default)")
+            if requires_playwright:
+                print("  [2] Proceed: I am connected to VPN, launch browser for authentication")
+                print("  [3] Proceed: I am connected to VPN, authentication was already done recently")
+            else:
+                print("  [2] Proceed: I am connected to VPN (or will connect right now)")
+            
+            choice = input(f"\nSelect an option [{'1-3' if requires_playwright else '1-2'}] (Default: 1): ").strip()
+            
+            if choice not in ['2', '3']:
+                print("Aborting.")
+                sys.exit(0)
+                
+            if choice == '2' and requires_playwright:
+                from confluence_dump.playwright.mhtml_downloader import MHTMLDownloader
+                print(f"\n[INFO] Initializing Playwright (Early Authentication)...")
+                dl = MHTMLDownloader(Path(args.outdir), args.base_url)
+                dl.verify_playwright_auth()
+            elif choice == '3' and requires_playwright:
+                from confluence_dump.playwright.mhtml_downloader import MHTMLDownloader
+                MHTMLDownloader._global_auth_verified = True
+                print(f"\n[INFO] Skipping Playwright Authentication prompt as requested.")
 
         args.func(args, active_css_files, exclude_ids)
         

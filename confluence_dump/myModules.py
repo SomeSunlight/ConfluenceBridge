@@ -568,8 +568,28 @@ def get_page_full(pageId, base_url, platform_config, auth_info, context_path_ove
 # ... (rest of API calls unchanged) ...
 def get_child_pages(pageId, base_url, platform_config, auth_info, context_path_override):
     url = _build_api_url(base_url, platform_config, context_path_override, 'url_get_child_pages', {'pageId': pageId})
-    params = {'limit': 200, 'expand': 'ancestors,metadata.labels'}
-    return _execute_get_request(url, auth_info, params=params)
+    # Add extensions.position to expand to get the manual Confluence tree order
+    params = {'limit': 200, 'expand': 'ancestors,metadata.labels,extensions.position'}
+    response = _execute_get_request(url, auth_info, params=params)
+    
+    # Ensure the children are sorted by their manual position, or naturally by title ("2." before "10.")
+    if response and 'results' in response:
+        def sort_key(item):
+            pos = item.get('extensions', {}).get('position')
+            if pos is not None:
+                try:
+                    return (0, int(pos))
+                except (ValueError, TypeError):
+                    pass
+            
+            # Fallback: Natural String Sort
+            title = item.get('title', '')
+            natural_key = [int(text) if text.isdigit() else text.lower() for text in re.split(r'(\d+)', title)]
+            return (1, natural_key)
+            
+        response['results'].sort(key=sort_key)
+        
+    return response
 
 
 def get_space_homepage(spaceKey, base_url, platform_config, auth_info, context_path_override):

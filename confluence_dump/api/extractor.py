@@ -98,6 +98,7 @@ class PageExtractor:
             
             # 6. Download attachments
             self._download_attachments(page_id, page_dir, verbose)
+            self._download_embedded_rest_images(html_content, page_dir, verbose)
             
             # 7. Update manifest (preserve needs_mhtml flag from analysis phase)
             parent_id = None
@@ -197,3 +198,47 @@ class PageExtractor:
                 print(f"    ⚠️  Download error for attachment '{local_path.name}': {e}", file=sys.stderr)
                 print(f"       Possible causes: Network error, missing permission, or file was deleted.", file=sys.stderr)
             return False
+
+    def _download_embedded_rest_images(self, html_content: str, page_dir: Path, verbose: bool = True) -> None:
+        """
+        Downloads images embedded via REST API (like PlantUML) that are not listed as regular attachments.
+        
+        Args:
+            html_content: The HTML content of the page
+            page_dir: Page directory in raw-data
+            verbose: Outputs status messages
+        """
+        if not html_content:
+            return
+            
+        import re
+        from urllib.parse import urlparse, unquote
+        import os
+        
+        attachments_dir = page_dir / 'attachments'
+        
+        # Find all embedded REST image sources (e.g. PlantUML)
+        urls = re.findall(r'src=["\']([^"\']*?/rest/plantuml/[^"\']*)["\']', html_content)
+        
+        if urls:
+            attachments_dir.mkdir(exist_ok=True)
+            # Use set() to remove duplicates (multiple uses of the same image)
+            unique_urls = set(urls)
+            if verbose:
+                print(f"    Loading {len(unique_urls)} embedded REST image(s) (PlantUML)...")
+                
+            for url in unique_urls:
+                # Construct full URL if relative
+                if url.startswith('/'):
+                    full_url = self.api.base_url.rstrip('/') + url
+                else:
+                    full_url = url
+                    
+                # Extract filename to match LinkRewriter (e.g. "3c895135e84e4a8c8a30896a5e997abe")
+                parsed_url = urlparse(full_url)
+                filename = unquote(os.path.basename(parsed_url.path))
+                
+                if filename:
+                    local_path = attachments_dir / filename
+                    if not local_path.exists():
+                        self._download_file(full_url, local_path, verbose=False)

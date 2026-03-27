@@ -5,7 +5,7 @@ The manifest stores version numbers of all downloaded pages.
 """
 
 from pathlib import Path
-from typing import Dict, Optional, Set, Any
+from typing import Dict, Optional, Set, Any, List
 from datetime import datetime
 import json
 
@@ -47,6 +47,7 @@ class Manifest:
             'version': '1.0',
             'last_sync': None,
             'space_key': None,
+            'tree_order': [],
             'pages': {},
             'deleted_pages': []
         }
@@ -62,6 +63,15 @@ class Manifest:
         from confluence_dump.utils.file_ops import atomic_write_json
         self.data['last_sync'] = datetime.now().isoformat()
         atomic_write_json(self.path, self.data)
+    
+    def set_tree_order(self, ordered_ids: List[str]) -> None:
+        """
+        Saves the original hierarchical page order from Confluence.
+        
+        Args:
+            ordered_ids: List of Page IDs in correct manual order
+        """
+        self.data['tree_order'] = ordered_ids
     
     def update_page(self, page_id: str, title: str, version: int, 
                     last_modified: str, parent_id: Optional[str],

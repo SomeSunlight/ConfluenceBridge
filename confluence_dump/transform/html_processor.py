@@ -56,7 +56,7 @@ class HTMLProcessor:
         meta_path = page_dir / 'meta.json'
         content_path = page_dir / 'content.html'
         
-        # MHTML kann aus zwei Quellen kommen: Manuell (full-pages) oder automatisch (raw-data)
+        # MHTML can come from two sources: Manual (full-pages) or automatic (raw-data)
         mhtml_auto_path = page_dir / 'content.mhtml'
         mhtml_manual_path = self.raw_data_dir.parent / 'full-pages' / f"{page_id}.mhtml"
         
@@ -67,26 +67,26 @@ class HTMLProcessor:
             
         page_metadata = json.loads(meta_path.read_text(encoding='utf-8'))
         
-        # Bevorzuge MHTML, falls vorhanden und nicht explizit ignoriert
+        # Prefer MHTML if available and not explicitly ignored
         mhtml_bytes = None
         if not force_api:
             if mhtml_manual_path.exists():
-                print(f"    [MHTML] Verwende manuellen MHTML-Download aus full-pages für Seite {page_id}")
+                print(f"    [MHTML] Page {page_id} generated from manual MHTML download")
                 mhtml_bytes = mhtml_manual_path.read_bytes()
             elif mhtml_auto_path.exists():
-                print(f"    [MHTML] Verwende Playwright-Download für Seite {page_id}")
+                print(f"    [MHTML] Page {page_id} generated from Playwright MHTML download")
                 mhtml_bytes = mhtml_auto_path.read_bytes()
             
         if mhtml_bytes:
             raw_html = self._extract_and_clean_mhtml(mhtml_bytes, page_id)
             
-            # Fallback + Fehlermeldung, falls MHTML defekt ist
+            # Fallback + Error message if MHTML is corrupted
             if not raw_html:
-                print(f"    [WARNUNG] Konnte MHTML nicht parsen! Falle auf normales HTML zurück.")
+                print(f"    [WARNING] Could not parse MHTML! Falling back to standard HTML.")
                 if content_path.exists():
                     raw_html = content_path.read_text(encoding='utf-8')
                 else:
-                    raise ValueError(f"MHTML defekt und kein Fallback-HTML vorhanden für Seite {page_id}")
+                    raise ValueError(f"MHTML is corrupted and no fallback HTML exists for page {page_id}")
                     
         elif content_path.exists():
             raw_html = content_path.read_text(encoding='utf-8')
@@ -125,14 +125,14 @@ class HTMLProcessor:
                     charset = part.get_content_charset() or 'utf-8'
                     html_content = part.get_payload(decode=True).decode(charset, errors='replace')
                 elif content_type.startswith("image/") or part.get_filename():
-                    # Extrahiere Attachments
+                    # Extract attachments
                     filename = part.get_filename()
                     if not filename:
-                        # Versuche Dateinamen aus Content-Location zu extrahieren
+                        # Try to extract filename from Content-Location
                         location = part.get("Content-Location", "")
                         if location:
                             filename = location.split('/')[-1]
-                            # Entferne Query-Parameter
+                            # Remove query parameters
                             filename = filename.split('?')[0]
                     if filename:
                         file_path = attachments_dir / filename
@@ -142,14 +142,14 @@ class HTMLProcessor:
                                 from confluence_dump.utils.file_ops import atomic_write_binary
                                 atomic_write_binary(file_path, payload)
                             except Exception as e:
-                                print(f"      [WARNUNG] Konnte Attachment {filename} nicht speichern: {e}")
+                                print(f"      [WARNING] Could not save attachment {filename}: {e}")
         else:
             if message.get_content_type() == "text/html":
                 charset = message.get_content_charset() or 'utf-8'
                 html_content = message.get_payload(decode=True).decode(charset, errors='replace')
                 
         if not html_content:
-            print("      [FEHLER] Kein text/html Part in der MHTML-Datei gefunden!")
+            print("      [ERROR] No text/html part found in MHTML file!")
             return ""
             
         soup = BeautifulSoup(html_content, 'html.parser')
@@ -179,7 +179,7 @@ class HTMLProcessor:
                 if wrapper:
                     wrapper.decompose()
                 elif element.parent:
-                    # 'div', 'td', 'th' wurden entfernt, um zu verhindern, dass versehentlich große Container gelöscht werden
+                    # 'div', 'td', 'th' were removed to prevent accidentally deleting large containers
                     if element.parent.name in ['p', 'span', 'b', 'strong', 'em', 'i']:
                         element.parent.decompose()
                     else:
@@ -285,11 +285,11 @@ class HTMLProcessor:
         meta_div = soup.new_tag('div', attrs={'class': 'page-metadata'})
         meta_ul = soup.new_tag('ul')
         meta_li = soup.new_tag('li', attrs={'class': 'page-metadata-modification-info'})
-        meta_li.append("Zuletzt aktualisiert von ")
+        meta_li.append("Last updated by ")
         span_author = soup.new_tag('span', attrs={'class': 'author'})
         span_author.string = author_name
         meta_li.append(span_author)
-        meta_li.append(" am ")
+        meta_li.append(" on ")
         span_date = soup.new_tag('span', attrs={'class': 'last-modified'})
         span_date.string = date_str
         meta_li.append(span_date)
@@ -345,6 +345,18 @@ class HTMLProcessor:
                 link_css = soup.new_tag('link', attrs={'rel': 'stylesheet', 'href': css_path, 'type': 'text/css'})
                 soup.head.append(link_css)
         
+        # 1.5 Clean up Jira Macro API Placeholders (Confluence REST API renders these incompletely)
+        for jira_span in soup.find_all('span', class_='jira-issue'):
+            summary = jira_span.find('span', class_='summary')
+            if summary and "Getting issue details" in summary.get_text():
+                summary.decompose()
+                # Clean up dangling hyphen text nodes (e.g. " - ")
+                for text_node in jira_span.find_all(string=re.compile(r'^\s*-\s*$')):
+                    text_node.extract()
+                    
+            for placeholder in jira_span.find_all(class_='issue-placeholder'):
+                placeholder.decompose()
+
         # 2. Image Rewriting (local paths only - no downloads)
         soup = self.link_rewriter.rewrite_images(soup)
         

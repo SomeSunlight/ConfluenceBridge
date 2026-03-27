@@ -29,17 +29,17 @@ class MHTMLDownloader:
         self.base_url = base_url.rstrip('/')
         
     def verify_playwright_auth(self) -> bool:
-        if MHTMLDownloader._global_auth_verified:
-            return True
-            
         """
         Opens a browser and asks the user to manually log in to Confluence.
         Waits until the user closes the browser.
         """
+        if MHTMLDownloader._global_auth_verified:
+            return True
+
         print("\n" + "="*70)
-        print("🔒 CONFLUENCE AUTHENTICATION REQUIRED FOR PLAYWRIGHT")
+        print("[!] CONFLUENCE AUTHENTICATION REQUIRED FOR PLAYWRIGHT")
         print("="*70)
-        print("1. A browser window will now open.")
+        print("1. A browser window will now open. This might take a minute or two")
         print(f"2. Please log in to: {self.base_url}")
         print("3. Solve any MFA/SSO challenges.")
         print("4. Close the browser window completely when you are fully logged in.")

@@ -34,16 +34,18 @@ class MHTMLDetector:
         manifest: Manifest instance for tracking MHTML requirements
     """
     
-    def __init__(self, raw_data_dir: Path, manifest):
+    def __init__(self, raw_data_dir: Path, manifest, mhtml_jira: bool = False):
         """
         Initialize MHTML detector.
         
         Args:
             raw_data_dir: Path to raw-data/ directory
             manifest: Manifest instance (will be updated with needs_mhtml flags)
+            mhtml_jira: If True, flags pages with Jira macros for MHTML download
         """
         self.raw_data_dir = raw_data_dir
         self.manifest = manifest
+        self.mhtml_jira = mhtml_jira
     
     def analyze_all_pages(self, verbose: bool = True) -> Dict[str, Any]:
         """
@@ -63,6 +65,7 @@ class MHTMLDetector:
             'needs_mhtml': 0,
             'patterns': {
                 'table_filter': 0,
+                'jira_macro': 0,
                 'complex_macros': 0,
                 'manual_force': 0
             }
@@ -103,6 +106,8 @@ class MHTMLDetector:
                     if verbose:
                         if 'manual_force' in detected_patterns:
                             print(f"  ⚠️ Page {page_id}: Requires MHTML (Manually forced via force_mhtml in manifest)")
+                        elif 'jira_macro' in detected_patterns:
+                            print(f"  ⚠️ Page {page_id}: Requires MHTML (Jira Macro and --mhtml-jira flag set)")
                         else:
                             print(f"  ⚠️ Page {page_id}: Requires MHTML (Table Filter with problematic filters)")
                 elif detected_patterns:
@@ -118,6 +123,8 @@ class MHTMLDetector:
             print(f"\n[Analysis Complete] {stats['needs_mhtml']}/{stats['total']} pages require MHTML download")
             if stats['patterns']['table_filter'] > 0:
                 print(f"  • Table Filter with problematic filters (numberfilter/iconfilter/userfilter/datefilter): {stats['patterns']['table_filter']}")
+            if stats['patterns'].get('jira_macro', 0) > 0:
+                print(f"  • Jira Macros (--mhtml-jira): {stats['patterns']['jira_macro']}")
             if stats['patterns'].get('manual_force', 0) > 0:
                 print(f"  • Manually forced via manifest (force_mhtml): {stats['patterns']['manual_force']}")
             if stats['patterns']['complex_macros'] > 0:
@@ -155,12 +162,17 @@ class MHTMLDetector:
         # Check for Table Filter macros
         if self._detect_table_filter(html_content, storage_content):
             detected_patterns.append('table_filter')
+            
+        # Check for Jira macros if opt-in is enabled
+        if self.mhtml_jira and self._detect_jira_macro(storage_content):
+            detected_patterns.append('jira_macro')
         
         # Check for other complex macros (extensible)
         if self._detect_complex_macros(html_content, storage_content):
             detected_patterns.append('complex_macros')
         
-        needs_mhtml = len(detected_patterns) > 0
+        # We only force MHTML for certain patterns
+        needs_mhtml = 'table_filter' in detected_patterns or 'jira_macro' in detected_patterns or 'manual_force' in detected_patterns
         return needs_mhtml, detected_patterns
     
     def _detect_table_filter(self, html_content: str, storage_content: str = None) -> bool:
@@ -207,6 +219,14 @@ class MHTMLDetector:
         
         return False
     
+    def _detect_jira_macro(self, storage_content: str = None) -> bool:
+        """
+        Detects Jira macros.
+        """
+        if storage_content and 'ac:name="jira"' in storage_content:
+            return True
+        return False
+
     def _detect_complex_macros(self, html_content: str, storage_content: str = None) -> bool:
         """
         Detects other complex client-side macros (for logging only).

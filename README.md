@@ -6,7 +6,7 @@ This toolbox exports content from a Confluence instance (Cloud or Data Center) i
 **Key Features:**
 - **Visual Fidelity:** Fetches rendered HTML (`export_view`) to preserve macros, layouts, and formatting.
 - **Navigation:** Injects a fully functional, static navigation sidebar into every HTML page.
-- **Offline Browsing:** Localizes images and links, and downloads **all** attachments (PDFs, Office docs, etc.) for complete offline access.
+- **Offline Browsing:** Localizes images and links, and downloads **all** attachments (PDFs, Office docs, etc.) including dynamically rendered REST images like PlantUML for complete offline access.
 - **Sort Order:** Recursively scans the tree to ensure the **manual sort order** from Confluence is preserved.
 - **Metadata Injection:** Automatically adds Page Title, Author, and Modification Date to the top of every page.
 - **Versioning:** Creates timestamped output folders (e.g., `2025-11-21 1400 Space IT`) for clean history management.
@@ -52,6 +52,8 @@ Run the dumper for a specific page tree. This will create a new folder in `outpu
 # Example for Data Center
 python3 confluenceDumpToHTML.py --use-etl --base-url "https://confluence.corp.com" --profile dc --context-path "/wiki" -o "./output" tree -p "123456"
 ```
+
+*Note: The script will present an interactive Pre-Flight Check to ensure VPN connectivity (for Data Center) and allow you to authenticate the Playwright browser before the download begins.*
 
 **⚠️ Important:** The `--use-etl` flag activates the new ETL-Pipeline architecture (Extract-Transform-Load). This is **required** for Delta-Sync and all new features.
 
@@ -326,6 +328,7 @@ python3 confluenceDumpToHTML.py [OPTIONS] <COMMAND> [ARGS]
 - **🆕 `--init`**: Resets the workspace (deletes `raw-data/`, `pages/`, `attachments/`). Useful for template usage.
 - **🆕 `--build-only`**: Regenerates HTML files from existing `raw-data/` without downloading. Useful after CSS changes or sidebar edits.
 - **🆕 `--skip-mhtml`**: Skips the automatic Playwright browser download for complex pages (falls back to basic API HTML).
+- **🆕 `--mhtml-jira`**: Forces Playwright MHTML download for pages containing Jira macros.
 
 ### Examples
 
@@ -389,6 +392,15 @@ If the automated Playwright download fails (e.g., due to strict company SSO/MFA 
 3. Rename it to exactly `[PageID].mhtml` (e.g., `123456.mhtml`).
 4. Place it in the `full-pages/` directory inside your workspace.
 5. Run the script normally or with `--build-only`. The script will prioritize your manual MHTML file over the API data.
+
+### Jira Inline Macros (The `--mhtml-jira` Flag)
+**The Problem:** Due to limitations in the Confluence REST API architecture, inline Jira macros are missing their title and status in the API output (they are populated dynamically via JavaScript in the browser). The standard API returns ugly placeholders like "Getting issue details..." and "STATUS".
+
+**Default Behavior:** The toolbox automatically cleans up the raw API output. It removes the ugly placeholders, leaving just a clean, functional link to the Jira ticket.
+
+**Opt-In (Full Data):** If you absolutely require the full Jira titles and status labels in your offline export, use the `--mhtml-jira` flag. This will force the Playwright MHTML download for all pages containing Jira macros, ensuring "WYSIWYG" visual fidelity.
+*⚠️ Caveat:* Using `--mhtml-jira` significantly increases the number of Playwright downloads, making the export slower. Furthermore, any status change in a linked Jira ticket will trigger a re-download of the page during Delta-Sync.
+
 ## Detailed Usage: Stage 2 (Architecture Sandbox)
 Allows re-organizing the structure (Index) locally without touching Confluence.
 1. **Generate Editor:**

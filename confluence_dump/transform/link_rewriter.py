@@ -130,8 +130,8 @@ class LinkRewriter:
             if not src:
                 continue
             
-            # Rewrite to local attachment path
-            if '/download/' in src or '/images/icons/' in src:
+            # Rewrite to local attachment path (including Confluence REST API images like PlantUML)
+            if '/download/' in src or '/images/icons/' in src or '/rest/plantuml/' in src:
                 from urllib.parse import unquote, urlparse
                 import os
                 filename = unquote(os.path.basename(urlparse(src).path))
