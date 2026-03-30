@@ -419,21 +419,43 @@ def process_page(page_id, global_args, active_css_files=None, exported_page_ids=
 
     # 0. Check for Manual Override
     override_path = None
-    if global_args.manual_overrides_dir and os.path.exists(global_args.manual_overrides_dir):
-        # Check .mhtml first (preferred for complete snapshots)
-        cand_mhtml = os.path.join(global_args.manual_overrides_dir, f"{page_id}.mhtml")
-        cand_html = os.path.join(global_args.manual_overrides_dir, f"{page_id}.html")
-
+    full_pages_dir = os.path.join(global_args.outdir, "full_pages")
+    if os.path.exists(full_pages_dir):
+        cand_mhtml = os.path.join(full_pages_dir, f"{page_id}.mhtml")
+        cand_html = os.path.join(full_pages_dir, f"{page_id}.html")
         if os.path.exists(cand_mhtml):
             override_path = cand_mhtml
         elif os.path.exists(cand_html):
             override_path = cand_html
 
+    if override_path:
+        if verbose: 
+            print(f"\n  ⚠️ [MANUAL OVERRIDE] Using local file from full_pages/: {os.path.basename(override_path)}")
+            print(f"     (Remove it from full_pages/ if you want to use the API/Playwright again)")
+        
+        if use_etl:
+            # If using ETL, copy the override into raw-data so the build phase picks it up
+            import shutil
+            page_dir = raw_data_dir / page_id
+            page_dir.mkdir(parents=True, exist_ok=True)
+            if override_path.endswith('.mhtml'):
+                shutil.copy2(override_path, page_dir / 'content.mhtml')
+            else:
+                shutil.copy2(override_path, page_dir / 'content.html')
+            # Fetch minimal metadata to not break sidebar
+            from confluence_dump.api.client import ConfluenceClient
+            client = ConfluenceClient(global_args.base_url, platform_config, auth_info, global_args.context_path)
+            page_meta = client.get_page_basic(page_id)
+            if page_meta:
+                collect_page_metadata(page_meta)
+                import json
+                (page_dir / 'meta.json').write_text(json.dumps(page_meta, ensure_ascii=False), encoding='utf-8')
+            return
+
     page_full = None
 
-    if override_path:
-        # CASE A: Manual Override
-        if verbose: print(f"  [OVERRIDE] Using local file: {override_path}")
+    if override_path and not use_etl:
+        # CASE A: Manual Override (Legacy Mode)
 
         try:
             # Metadata Fetch
@@ -987,7 +1009,6 @@ def main():
     g.add_argument('-t', '--threads', type=int, default=1, help="Number of threads for download (Default: 1)")
     g.add_argument('--exclude-page-id', action='append', help="Exclude a page ID and its children")
     g.add_argument('--no-vpn-reminder', action='store_true', help="Skip the VPN check confirmation for Data Center")
-    g.add_argument('--manual-overrides-dir', help="Folder containing [pageId].html files to use instead of API")
     g.add_argument('--debug-storage', action='store_true', help="Save Confluence Storage Format (.storage.xml)")
     g.add_argument('--debug-views', action='store_true', help="Save original/styled HTML views for debugging")
     g.add_argument('--no-metadata-json', action='store_true', help="Do not save the JSON metadata file")
@@ -1050,7 +1071,7 @@ def main():
         print(f"[INFO] Build-Only Mode: Loading configuration from {workspace_dir / 'config.json'}...")
         try:
             args = config_manager.merge_with_cli_args(args)
-            print(f"[INFO] Configuration loaded. Starting Offline-Rebuild...")
+            print(f"[INFO] Configuration loaded. Starting Offline Rebuild...")
         except Exception as e:
             print(f"\n╔════════════════════════════════════════════════════════════════╗", file=sys.stderr)
             print(f"║ ERROR: Workspace configuration could not be loaded            ║", file=sys.stderr)
@@ -1173,7 +1194,7 @@ def main():
             else:
                 print(f"[INFO] {deleted_count} orphaned files successfully deleted.")
         
-        # CSS-Dateien kopieren
+        # Copy CSS files
         active_css_files = []
         local_styles_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'styles')
         if os.path.exists(local_styles_dir):
@@ -1183,32 +1204,32 @@ def main():
                     shutil.copy(f, target)
                     active_css_files.append(f"../styles/{os.path.basename(f)}")
         
-        # Führe Build-Phase aus
+        # Execute Build Phase
         try:
-            print(f"\n[INFO] Starte Offline-Rebuild...")
+            print(f"\n[INFO] Starting Offline Rebuild...")
             run_build_phase(args, target_ids, active_css_files, manifest)
             
-            # Generiere Index
+            # Generate Index
             build_index_html(args.outdir, active_css_files)
             
-            print(f"\n✅ Offline-Rebuild abgeschlossen. Output in: {args.outdir}")
-            print(f"\n💡 TIPP: Öffne die Startseite:")
+            print(f"\n✅ Offline Rebuild complete. Output in: {args.outdir}")
+            print(f"\n💡 TIP: Open the homepage:")
             print(f"  {workspace_dir / 'index.html'}")
             sys.exit(0)
         except Exception as e:
             print(f"\n╔════════════════════════════════════════════════════════════════╗", file=sys.stderr)
-            print(f"║ FEHLER: Offline-Rebuild fehlgeschlagen                        ║", file=sys.stderr)
+            print(f"║ ERROR: Offline Rebuild failed                                 ║", file=sys.stderr)
             print(f"╚════════════════════════════════════════════════════════════════╝", file=sys.stderr)
             print(f"\n📋 PROBLEM:", file=sys.stderr)
             print(f"  {e}", file=sys.stderr)
-            print(f"\n🔍 URSACHE:", file=sys.stderr)
-            print(f"  Die Rohdaten in raw-data/ sind möglicherweise unvollständig oder beschädigt.", file=sys.stderr)
-            print(f"\n✅ LÖSUNGSOPTIONEN:", file=sys.stderr)
-            print(f"  1. Führe einen neuen Download durch:", file=sys.stderr)
+            print(f"\n🔍 CAUSE:", file=sys.stderr)
+            print(f"  The raw data in raw-data/ might be incomplete or corrupted.", file=sys.stderr)
+            print(f"\n✅ SOLUTION OPTIONS:", file=sys.stderr)
+            print(f"  1. Run a new download:", file=sys.stderr)
             print(f"     python confluenceDumpToHTML.py --use-etl -o \"{workspace_dir}\"", file=sys.stderr)
-            print(f"\n  2. Prüfe die Rohdaten:", file=sys.stderr)
+            print(f"\n  2. Check the raw data:", file=sys.stderr)
             print(f"     {raw_data_dir}", file=sys.stderr)
-            print(f"\n🔧 TECHNISCHE DETAILS:", file=sys.stderr)
+            print(f"\n🔧 TECHNICAL DETAILS:", file=sys.stderr)
             import traceback
             traceback.print_exc()
             sys.exit(1)
@@ -1216,53 +1237,53 @@ def main():
     # Handle --init Flag (Workspace Reset)
     if args.init:
         if config_manager.exists():
-            print(f"[INFO] Workspace-Reset wird durchgeführt...")
-            print(f"[INFO] Lösche raw-data/, pages/, attachments/...")
+            print(f"[INFO] Performing Workspace Reset...")
+            print(f"[INFO] Deleting raw-data/, pages/, attachments/...")
             
-            # Lösche Datenverzeichnisse
+            # Delete data directories
             dirs_to_delete = ['raw-data', 'pages', 'attachments', 'logs']
             for dir_name in dirs_to_delete:
                 dir_path = workspace_dir / dir_name
                 if dir_path.exists():
                     shutil.rmtree(dir_path)
-                    print(f"  ✓ {dir_name}/ gelöscht")
+                    print(f"  ✓ {dir_name}/ deleted")
             
-            print(f"[INFO] Workspace bereinigt. config.json und styles/ bleiben erhalten.")
-            print(f"[INFO] Starte Neuaufbau...")
+            print(f"[INFO] Workspace cleaned. config.json and styles/ remain intact.")
+            print(f"[INFO] Starting rebuild...")
         else:
-            print(f"[WARNUNG] --init ohne existierenden Workspace. Wird als initialer Download behandelt.")
+            print(f"[WARNING] --init without an existing workspace. Treating as initial download.")
     
     is_sync = config_manager.exists() and not args.init
     
     if is_sync:
-        # SYNC-Modus: Lade Config aus Workspace
-        print(f"[INFO] Workspace erkannt. Lade Konfiguration aus {workspace_dir / 'config.json'}...")
+        # SYNC-Mode: Load Config from Workspace
+        print(f"[INFO] Workspace detected. Loading configuration from {workspace_dir / 'config.json'}...")
         try:
             args = config_manager.merge_with_cli_args(args)
             
-            # Hash-Validierung (Fail Fast bei Konflikten)
+            # Hash Validation (Fail Fast on conflicts)
             is_valid, error_msg = config_manager.validate_config_hash(args)
             if not is_valid:
                 print(f"\n╔════════════════════════════════════════════════════════════════╗", file=sys.stderr)
-                print(f"║ FEHLER: Konfigurationskonflikt erkannt                        ║", file=sys.stderr)
+                print(f"║ ERROR: Configuration conflict detected                        ║", file=sys.stderr)
                 print(f"╚════════════════════════════════════════════════════════════════╝", file=sys.stderr)
                 print(f"\n📋 PROBLEM:", file=sys.stderr)
                 print(f"  {error_msg}", file=sys.stderr)
-                print(f"\n🔍 URSACHE:", file=sys.stderr)
-                print(f"  Delta-Sync erfordert identische Parameter wie beim initialen Download.", file=sys.stderr)
-                print(f"  Abweichende Parameter würden zu inkonsistenten Daten führen.", file=sys.stderr)
-                print(f"\n✅ LÖSUNGSOPTIONEN:", file=sys.stderr)
-                print(f"  1. Für Delta-Sync: Nutze nur den Workspace-Pfad ohne zusätzliche Parameter:", file=sys.stderr)
+                print(f"\n🔍 CAUSE:", file=sys.stderr)
+                print(f"  Delta-Sync requires identical parameters as the initial download.", file=sys.stderr)
+                print(f"  Divergent parameters would lead to inconsistent data.", file=sys.stderr)
+                print(f"\n✅ SOLUTION OPTIONS:", file=sys.stderr)
+                print(f"  1. For Delta-Sync: Use only the workspace path without additional parameters:", file=sys.stderr)
                 print(f"     python confluenceDumpToHTML.py --use-etl -o \"{workspace_dir}\"", file=sys.stderr)
-                print(f"\n  2. Für Neuaufbau mit neuen Parametern: Nutze --init Flag:", file=sys.stderr)
-                print(f"     python confluenceDumpToHTML.py --use-etl --init -o \"{workspace_dir}\" [NEUE_PARAMETER]", file=sys.stderr)
-                print(f"\n  3. Für komplett neuen Export: Erstelle neuen Workspace:", file=sys.stderr)
-                print(f"     python confluenceDumpToHTML.py --use-etl -o \"./output\" [PARAMETER]", file=sys.stderr)
-                print(f"\n💡 TIPP: Die gespeicherte Konfiguration findest du in:", file=sys.stderr)
+                print(f"\n  2. For rebuild with new parameters: Use --init flag:", file=sys.stderr)
+                print(f"     python confluenceDumpToHTML.py --use-etl --init -o \"{workspace_dir}\" [NEW_PARAMETERS]", file=sys.stderr)
+                print(f"\n  3. For completely new export: Create new workspace:", file=sys.stderr)
+                print(f"     python confluenceDumpToHTML.py --use-etl -o \"./output\" [PARAMETERS]", file=sys.stderr)
+                print(f"\n💡 TIP: The saved configuration can be found at:", file=sys.stderr)
                 print(f"     {workspace_dir / 'config.json'}", file=sys.stderr)
                 sys.exit(1)
                 
-            print(f"[INFO] Konfiguration erfolgreich geladen. Delta-Sync aktiv.")
+            print(f"[INFO] Configuration loaded successfully. Delta-Sync active.")
             
             # Wichtig: Setze die func-Methode basierend auf dem geladenen command
             if not hasattr(args, 'command') or not args.command:
@@ -1294,76 +1315,76 @@ def main():
                 args.func = handle_all_spaces
             else:
                 print(f"\n╔════════════════════════════════════════════════════════════════╗", file=sys.stderr)
-                print(f"║ INTERNER FEHLER: Unbekanntes Command in Konfiguration        ║", file=sys.stderr)
+                print(f"║ INTERNAL ERROR: Unknown command in configuration             ║", file=sys.stderr)
                 print(f"╚════════════════════════════════════════════════════════════════╝", file=sys.stderr)
                 print(f"\n📋 PROBLEM:", file=sys.stderr)
-                print(f"  Unbekanntes Command in config.json: '{args.command}'", file=sys.stderr)
-                print(f"\n🔍 URSACHE:", file=sys.stderr)
-                print(f"  Die Workspace-Konfiguration enthält einen ungültigen Command-Wert.", file=sys.stderr)
-                print(f"  Dies ist KEIN Anwenderfehler - die Datei wurde möglicherweise manuell bearbeitet.", file=sys.stderr)
-                print(f"\n✅ LÖSUNGSOPTIONEN:", file=sys.stderr)
-                print(f"  1. Workspace neu initialisieren (empfohlen):", file=sys.stderr)
-                print(f"     python confluenceDumpToHTML.py --use-etl --init -o \"{workspace_dir}\" [PARAMETER]", file=sys.stderr)
-                print(f"\n  2. config.json manuell korrigieren:", file=sys.stderr)
+                print(f"  Unknown command in config.json: '{args.command}'", file=sys.stderr)
+                print(f"\n🔍 CAUSE:", file=sys.stderr)
+                print(f"  The workspace configuration contains an invalid command value.", file=sys.stderr)
+                print(f"  This is NOT a user error - the file might have been edited manually.", file=sys.stderr)
+                print(f"\n✅ SOLUTION OPTIONS:", file=sys.stderr)
+                print(f"  1. Re-initialize workspace (recommended):", file=sys.stderr)
+                print(f"     python confluenceDumpToHTML.py --use-etl --init -o \"{workspace_dir}\" [PARAMETERS]", file=sys.stderr)
+                print(f"\n  2. Manually fix config.json:", file=sys.stderr)
                 print(f"     {workspace_dir / 'config.json'}", file=sys.stderr)
-                print(f"     (Erlaubte Werte: 'space', 'tree', 'single', 'label', 'all-spaces')", file=sys.stderr)
+                print(f"     (Allowed values: 'space', 'tree', 'single', 'label', 'all-spaces')", file=sys.stderr)
                 sys.exit(1)
                 
         except Exception as e:
             print(f"\n╔════════════════════════════════════════════════════════════════╗", file=sys.stderr)
-            print(f"║ INTERNER FEHLER: Workspace-Konfiguration konnte nicht geladen werden ║", file=sys.stderr)
+            print(f"║ INTERNAL ERROR: Workspace configuration could not be loaded  ║", file=sys.stderr)
             print(f"╚════════════════════════════════════════════════════════════════╝", file=sys.stderr)
             print(f"\n📋 PROBLEM:", file=sys.stderr)
-            print(f"  Fehler beim Laden der Workspace-Konfiguration: {e}", file=sys.stderr)
-            print(f"\n🔍 URSACHE:", file=sys.stderr)
-            print(f"  Die config.json Datei ist möglicherweise beschädigt oder nicht lesbar.", file=sys.stderr)
-            print(f"  Dies ist KEIN Anwenderfehler.", file=sys.stderr)
-            print(f"\n✅ LÖSUNGSOPTIONEN:", file=sys.stderr)
-            print(f"  1. Workspace neu initialisieren:", file=sys.stderr)
-            print(f"     python confluenceDumpToHTML.py --use-etl --init -o \"{workspace_dir}\" [PARAMETER]", file=sys.stderr)
-            print(f"\n  2. Prüfe Dateiberechtigungen:", file=sys.stderr)
+            print(f"  Error loading workspace configuration: {e}", file=sys.stderr)
+            print(f"\n🔍 CAUSE:", file=sys.stderr)
+            print(f"  The config.json file might be corrupted or unreadable.", file=sys.stderr)
+            print(f"  This is NOT a user error.", file=sys.stderr)
+            print(f"\n✅ SOLUTION OPTIONS:", file=sys.stderr)
+            print(f"  1. Re-initialize workspace:", file=sys.stderr)
+            print(f"     python confluenceDumpToHTML.py --use-etl --init -o \"{workspace_dir}\" [PARAMETERS]", file=sys.stderr)
+            print(f"\n  2. Check file permissions:", file=sys.stderr)
             print(f"     {workspace_dir / 'config.json'}", file=sys.stderr)
-            print(f"\n🔧 TECHNISCHE DETAILS:", file=sys.stderr)
+            print(f"\n🔧 TECHNICAL DETAILS:", file=sys.stderr)
             import traceback
             traceback.print_exc()
             sys.exit(1)
     else:
-        # INITIAL-Modus: Validiere erforderliche Parameter
+        # INITIAL-Mode: Validate required parameters
         if not args.base_url or not args.profile:
             print(f"\n╔════════════════════════════════════════════════════════════════╗", file=sys.stderr)
-            print(f"║ FEHLER: Fehlende erforderliche Parameter                      ║", file=sys.stderr)
+            print(f"║ ERROR: Missing required parameters                            ║", file=sys.stderr)
             print(f"╚════════════════════════════════════════════════════════════════╝", file=sys.stderr)
             print(f"\n📋 PROBLEM:", file=sys.stderr)
-            print(f"  Initialer Download erfordert --base-url und --profile", file=sys.stderr)
-            print(f"\n🔍 URSACHE:", file=sys.stderr)
-            print(f"  Für den ersten Download müssen Confluence-URL und Plattform-Typ angegeben werden.", file=sys.stderr)
-            print(f"\n✅ LÖSUNGSOPTIONEN:", file=sys.stderr)
-            print(f"  Beispiel für Confluence Cloud:", file=sys.stderr)
+            print(f"  Initial download requires --base-url and --profile", file=sys.stderr)
+            print(f"\n🔍 CAUSE:", file=sys.stderr)
+            print(f"  For the first download, the Confluence URL and platform type must be provided.", file=sys.stderr)
+            print(f"\n✅ SOLUTION OPTIONS:", file=sys.stderr)
+            print(f"  Example for Confluence Cloud:", file=sys.stderr)
             print(f"    python confluenceDumpToHTML.py --use-etl --base-url \"https://yoursite.atlassian.net\" \\", file=sys.stderr)
             print(f"           --profile cloud -o \"./output\" space --space-key IT", file=sys.stderr)
-            print(f"\n  Beispiel für Confluence Data Center:", file=sys.stderr)
+            print(f"\n  Example for Confluence Data Center:", file=sys.stderr)
             print(f"    python confluenceDumpToHTML.py --use-etl --base-url \"https://confluence.corp.com\" \\", file=sys.stderr)
             print(f"           --profile dc --context-path \"/wiki\" -o \"./output\" tree --pageid 123456", file=sys.stderr)
             sys.exit(1)
         if not hasattr(args, 'command') or not args.command:
             print(f"\n╔════════════════════════════════════════════════════════════════╗", file=sys.stderr)
-            print(f"║ FEHLER: Kein Command angegeben                                ║", file=sys.stderr)
+            print(f"║ ERROR: No command specified                                   ║", file=sys.stderr)
             print(f"╚════════════════════════════════════════════════════════════════╝", file=sys.stderr)
             print(f"\n📋 PROBLEM:", file=sys.stderr)
-            print(f"  Es wurde kein Download-Modus (Command) angegeben.", file=sys.stderr)
-            print(f"\n🔍 URSACHE:", file=sys.stderr)
-            print(f"  Der Downloader benötigt einen Command um zu wissen, WAS heruntergeladen werden soll.", file=sys.stderr)
-            print(f"\n✅ VERFÜGBARE COMMANDS:", file=sys.stderr)
-            print(f"  • space       - Ganzer Space (ab Homepage rekursiv)", file=sys.stderr)
-            print(f"  • tree        - Seiten-Baum (ab bestimmter Seite rekursiv)", file=sys.stderr)
-            print(f"  • single      - Einzelne Seite (ohne Kinder)", file=sys.stderr)
-            print(f"  • label       - Alle Seiten mit bestimmtem Label", file=sys.stderr)
-            print(f"  • all-spaces  - Alle sichtbaren Spaces", file=sys.stderr)
-            print(f"\n💡 BEISPIELE:", file=sys.stderr)
+            print(f"  No download mode (Command) was specified.", file=sys.stderr)
+            print(f"\n🔍 CAUSE:", file=sys.stderr)
+            print(f"  The downloader needs a Command to know WHAT to download.", file=sys.stderr)
+            print(f"\n✅ AVAILABLE COMMANDS:", file=sys.stderr)
+            print(f"  • space       - Entire Space (recursive from Homepage)", file=sys.stderr)
+            print(f"  • tree        - Page Tree (recursive from a specific page)", file=sys.stderr)
+            print(f"  • single      - Single page (no children)", file=sys.stderr)
+            print(f"  • label       - All pages with a specific label", file=sys.stderr)
+            print(f"  • all-spaces  - All visible spaces", file=sys.stderr)
+            print(f"\n💡 EXAMPLES:", file=sys.stderr)
             print(f"  python confluenceDumpToHTML.py --use-etl [OPTIONS] space --space-key IT", file=sys.stderr)
             print(f"  python confluenceDumpToHTML.py --use-etl [OPTIONS] tree --pageid 123456", file=sys.stderr)
             sys.exit(1)
-        print(f"[INFO] Neuer Workspace. Initialer Download wird gestartet...")
+        print(f"[INFO] New workspace. Starting initial download...")
 
     global platform_config, auth_info
     active_css_files = []
@@ -1448,32 +1469,32 @@ def main():
 
         args.func(args, active_css_files, exclude_ids)
         
-        # --- NEW: Speichere Config nach erfolgreichem Download (vor HTML-Generierung) ---
+        # --- NEW: Save Config after successful download (before HTML generation) ---
         if not is_sync:
-            print(f"\n[INFO] Speichere Workspace-Konfiguration...")
+            print(f"\n[INFO] Saving workspace configuration...")
             config_manager.save_config(args)
-            print(f"[INFO] Konfiguration gespeichert in {workspace_dir / 'config.json'}")
-            print(f"\n💡 ZUKÜNFTIGE SYNCS (Zero-Config):")
+            print(f"[INFO] Configuration saved to {workspace_dir / 'config.json'}")
+            print(f"\n💡 FUTURE SYNCS (Zero-Config):")
             print(f"  python confluenceDumpToHTML.py --use-etl -o \"{workspace_dir}\"")
-            print(f"\n💡 WORKSPACE NEU AUFBAUEN:")
+            print(f"\n💡 REBUILD WORKSPACE:")
             print(f"  python confluenceDumpToHTML.py --use-etl --init -o \"{workspace_dir}\"")
         
         build_index_html(args.outdir, active_css_files)
-        print(f"\n✅ Download abgeschlossen. Output in: {args.outdir}")
+        print(f"\n✅ Download complete. Output in: {args.outdir}")
     except Exception as e:
         print(f"\n╔════════════════════════════════════════════════════════════════╗", file=sys.stderr)
-        print(f"║ INTERNER FEHLER: Unerwarteter Fehler während der Ausführung  ║", file=sys.stderr)
+        print(f"║ INTERNAL ERROR: Unexpected error during execution            ║", file=sys.stderr)
         print(f"╚════════════════════════════════════════════════════════════════╝", file=sys.stderr)
         print(f"\n📋 PROBLEM:", file=sys.stderr)
         print(f"  {e}", file=sys.stderr)
-        print(f"\n🔍 URSACHE:", file=sys.stderr)
-        print(f"  Ein unerwarteter Fehler ist aufgetreten. Dies ist KEIN Anwenderfehler.", file=sys.stderr)
-        print(f"\n✅ LÖSUNGSOPTIONEN:", file=sys.stderr)
-        print(f"  1. Prüfe die technischen Details unten", file=sys.stderr)
-        print(f"  2. Bei Netzwerkfehlern: Prüfe VPN-Verbindung (Data Center) oder Internet-Verbindung (Cloud)", file=sys.stderr)
-        print(f"  3. Bei Authentifizierungsfehlern: Prüfe CONFLUENCE_TOKEN Environment Variable", file=sys.stderr)
-        print(f"  4. Erstelle ein GitHub Issue mit den technischen Details", file=sys.stderr)
-        print(f"\n🔧 TECHNISCHE DETAILS:", file=sys.stderr)
+        print(f"\n🔍 CAUSE:", file=sys.stderr)
+        print(f"  An unexpected error occurred. This is NOT a user error.", file=sys.stderr)
+        print(f"\n✅ SOLUTION OPTIONS:", file=sys.stderr)
+        print(f"  1. Check the technical details below", file=sys.stderr)
+        print(f"  2. For network errors: Check VPN connection (Data Center) or internet connection (Cloud)", file=sys.stderr)
+        print(f"  3. For authentication errors: Check CONFLUENCE_TOKEN Environment Variable", file=sys.stderr)
+        print(f"  4. Create a GitHub Issue with the technical details", file=sys.stderr)
+        print(f"\n🔧 TECHNICAL DETAILS:", file=sys.stderr)
         import traceback
         traceback.print_exc()
         sys.exit(1)

@@ -199,40 +199,14 @@ python3 confluenceDumpToHTML.py --use-etl --build-only \
 
 ### Workflow 5: Resolving Parameter Conflicts
 
-If you accidentally specify different parameters than during the initial download, you'll get a **Fail-Fast error**:
+If you accidentally specify different parameters than during the initial download, the script will abort with a **Fail-Fast error**.
 
 ```bash
-# Error: Different space key than initial download
+# Error: Different space key than initial download or redundant parameters
 python3 confluenceDumpToHTML.py --use-etl -o "./output/2025-03-16 1430 Space IT" space --space-key HR
 ```
 
-**Output:**
-```
-╔════════════════════════════════════════════════════════════════╗
-║ ERROR: Configuration conflict detected                        ║
-╚════════════════════════════════════════════════════════════════╝
-
-📋 PROBLEM:
-  Parameter 'space_key' differs from saved configuration.
-  Expected: 'IT', Received: 'HR'
-
-🔍 CAUSE:
-  Delta-Sync requires identical parameters as the initial download.
-  Divergent parameters would lead to inconsistent data.
-
-✅ SOLUTION OPTIONS:
-  1. For Delta-Sync: Use only the workspace path without additional parameters:
-     python confluenceDumpToHTML.py --use-etl -o "./output/2025-03-16 1430 Space IT"
-
-  2. For rebuild with new parameters: Use --init flag:
-     python confluenceDumpToHTML.py --use-etl --init -o "./output/2025-03-16 1430 Space IT" space --space-key HR
-
-  3. For completely new export: Create new workspace:
-     python confluenceDumpToHTML.py --use-etl -o "./output" space --space-key HR
-
-💡 TIP: The saved configuration can be found at:
-     ./output/2025-03-16 1430 Space IT/config.json
-```
+Because Delta-Sync automatically loads all parameters from the workspace configuration (`config.json`), manually specifying commands or page IDs would create conflicts and lead to inconsistent data. The script will output an error detailing the redundant parameters and offer you options on how to proceed (e.g., using only the workspace path for Delta-Sync, or using the `--init` flag to rebuild with new parameters).
 
 ### What is saved in `config.json`?
 
@@ -390,8 +364,8 @@ If the automated Playwright download fails (e.g., due to strict company SSO/MFA 
 1. Open the problematic Confluence page in Chrome/Edge.
 2. Save the page as **"Webpage, Single File (*.mhtml)"**.
 3. Rename it to exactly `[PageID].mhtml` (e.g., `123456.mhtml`).
-4. Place it in the `full-pages/` directory inside your workspace.
-5. Run the script normally or with `--build-only`. The script will prioritize your manual MHTML file over the API data.
+4. Place it in the `full_pages/` directory inside your workspace (create the folder if it doesn't exist).
+5. Run the script normally or with `--build-only`. The script will detect the file in `full_pages/` and prioritize your manual MHTML file over the API data. You will see a warning prompt ensuring you are aware the local override is being used.
 
 ### Jira Inline Macros (The `--mhtml-jira` Flag)
 **The Problem:** Due to limitations in the Confluence REST API architecture, inline Jira macros are missing their title and status in the API output (they are populated dynamically via JavaScript in the browser). The standard API returns ugly placeholders like "Getting issue details..." and "STATUS".
