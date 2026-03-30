@@ -220,6 +220,12 @@ def clean_manual_html(html_content):
                 else:
                     element.extract()
 
+    # Protect expand buttons from being removed by aui-button cleanup
+    for expand_btn in content_node.find_all(class_='expand-control'):
+        btn = expand_btn.find(class_=re.compile(r'aui-button'))
+        if btn:
+            btn['class'] = [c for c in btn.get('class', []) if 'aui-button' not in c]
+
     for tag in content_node.find_all(
             class_=re.compile(r'(aui-icon|icon-macro|refresh-macro|macro-placeholder|aui-button|tf-filter-button|table-filter|copy-heading-link-container|aui-inline-dialog-contents|tableFilterCbStyle)')):
         tag.decompose()

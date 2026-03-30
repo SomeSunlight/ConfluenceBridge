@@ -185,6 +185,12 @@ class HTMLProcessor:
                     else:
                         element.extract()
 
+        # Protect expand buttons from being removed by aui-button cleanup
+        for expand_btn in content_node.find_all(class_='expand-control'):
+            btn = expand_btn.find(class_=re.compile(r'aui-button'))
+            if btn:
+                btn['class'] = [c for c in btn.get('class', []) if 'aui-button' not in c]
+
         for tag in content_node.find_all(class_=re.compile(r'(aui-icon|icon-macro|refresh-macro|macro-placeholder|aui-button|tf-filter-button|copy-heading-link-container|aui-inline-dialog-contents|tableFilterCbStyle)')):
             tag.decompose()
 
@@ -337,6 +343,13 @@ class HTMLProcessor:
             #sidebar details > summary::-webkit-details-marker { display: none; }
             #sidebar details > summary::before { content: '▶'; display: inline-block; font-size: 10px; margin-right: 6px; color: #6b778c; }
             #sidebar details[open] > summary::before { transform: rotate(90deg); }
+
+            details.confluence-expand { margin-bottom: 10px; border: 1px solid #dfe1e6; border-radius: 3px; }
+            details.confluence-expand > summary { cursor: pointer; font-weight: 600; padding: 10px; background: #f4f5f7; outline: none; list-style: none; }
+            details.confluence-expand > summary::-webkit-details-marker { display: none; }
+            details.confluence-expand > summary::before { content: '▶'; display: inline-block; font-size: 12px; margin-right: 8px; color: #6b778c; transition: transform 0.2s; }
+            details.confluence-expand[open] > summary::before { transform: rotate(90deg); }
+            details.confluence-expand > .expand-content { padding: 10px; border-top: 1px solid #dfe1e6; }
         """
         soup.head.append(style_tag)
         
@@ -356,6 +369,45 @@ class HTMLProcessor:
                     
             for placeholder in jira_span.find_all(class_='issue-placeholder'):
                 placeholder.decompose()
+
+        # 1.6 Convert Confluence Expand Macros to HTML5 details/summary
+        for expand in soup.find_all(class_=re.compile(r'\bexpand-container\b')):
+            details = soup.new_tag('details', attrs={'class': 'confluence-expand'})
+            
+            summary = soup.new_tag('summary')
+            
+            control_text = expand.find(class_=re.compile(r'\bexpand-control-text\b'))
+            if control_text:
+                summary.string = control_text.get_text(strip=True)
+            else:
+                summary.string = "Expand"
+                
+            details.append(summary)
+            
+            content = expand.find(class_=re.compile(r'\bexpand-content\b'))
+            if content:
+                content_div = soup.new_tag('div', attrs={'class': 'expand-content'})
+                for child in list(content.contents):
+                    content_div.append(child)
+                details.append(content_div)
+                
+            expand.replace_with(details)
+
+        # 1.7 Repair Draw.io Macros in MHTML (Reconstruct missing image tags)
+        for drawio_macro in soup.find_all(class_=re.compile(r'\bconf-macro\b'), attrs={'data-macro-name': 'drawio'}):
+            # Der Name des Diagramms ist oft in einem unsichtbaren div versteckt
+            name_div = drawio_macro.find('div', style=lambda s: s and 'display:none' in s.replace(' ', '').lower())
+            if name_div and name_div.string:
+                diagram_name = name_div.string.strip()
+                if not diagram_name.lower().endswith('.png'):
+                    diagram_name += '.png'
+                
+                # Erstelle ein sauberes img-Tag, das auf das Attachment verweist
+                img_tag = soup.new_tag('img', src=f"../attachments/{diagram_name}", attrs={'class': 'drawio-diagram-image', 'style': 'max-width: 100%;'})
+                
+                # Ersetze den kaputten Makro-Inhalt durch das Bild
+                drawio_macro.clear()
+                drawio_macro.append(img_tag)
 
         # 2. Image Rewriting (local paths only - no downloads)
         soup = self.link_rewriter.rewrite_images(soup)
