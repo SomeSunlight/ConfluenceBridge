@@ -217,15 +217,15 @@ class PageExtractor:
         
         attachments_dir = page_dir / 'attachments'
         
-        # Find all embedded REST image sources (e.g. PlantUML)
-        urls = re.findall(r'src=["\']([^"\']*?/rest/plantuml/[^"\']*)["\']', html_content)
+        # Find all embedded REST image sources (e.g. PlantUML) and cross-page attachments
+        urls = re.findall(r'src=["\']([^"\']*?(?:/rest/plantuml/|/download/attachments/|/download/thumbnails/)[^"\']*)["\']', html_content)
         
         if urls:
             attachments_dir.mkdir(exist_ok=True)
             # Use set() to remove duplicates (multiple uses of the same image)
             unique_urls = set(urls)
             if verbose:
-                print(f"    Loading {len(unique_urls)} embedded REST image(s) (PlantUML)...")
+                print(f"    Loading {len(unique_urls)} embedded image(s) (PlantUML / cross-page attachments)...")
                 
             for url in unique_urls:
                 # Construct full URL if relative
