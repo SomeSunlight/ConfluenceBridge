@@ -128,7 +128,7 @@ class HTMLProcessor:
                 elif content_type == "text/css":
                     charset = part.get_content_charset() or 'utf-8'
                     css_part = part.get_payload(decode=True).decode(charset, errors='replace')
-                    css_content += f"\n<style>\n{css_part}\n</style>\n"
+                    css_content += f"\n{css_part}\n"
                 elif content_type.startswith("image/") or part.get_filename():
                     # Extract attachments
                     filename = part.get_filename()
@@ -148,12 +148,6 @@ class HTMLProcessor:
                                 atomic_write_binary(file_path, payload)
                             except Exception as e:
                                 print(f"      [WARNING] Could not save attachment {filename}: {e}")
-            
-            if html_content and css_content:
-                if "</head>" in html_content:
-                    html_content = html_content.replace("</head>", f"{css_content}</head>")
-                else:
-                    html_content += css_content
         else:
             if message.get_content_type() == "text/html":
                 charset = message.get_content_charset() or 'utf-8'
@@ -239,6 +233,11 @@ class HTMLProcessor:
         for tag in list(content_node.find_all(['tr', 'span'])):
             if is_hidden(tag):
                 tag.decompose()
+                
+        if css_content:
+            style_tag = soup.new_tag('style', type='text/css')
+            style_tag.string = css_content
+            content_node.insert(0, style_tag)
             
         return content_node.decode_contents()
 
