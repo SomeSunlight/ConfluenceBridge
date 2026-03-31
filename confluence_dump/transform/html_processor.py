@@ -114,6 +114,7 @@ class HTMLProcessor:
         """
         message = email.message_from_bytes(mhtml_bytes)
         html_content = ""
+        css_content = ""
         
         attachments_dir = self.raw_data_dir / page_id / 'attachments'
         attachments_dir.mkdir(parents=True, exist_ok=True)
@@ -124,6 +125,10 @@ class HTMLProcessor:
                 if content_type == "text/html" and not html_content:
                     charset = part.get_content_charset() or 'utf-8'
                     html_content = part.get_payload(decode=True).decode(charset, errors='replace')
+                elif content_type == "text/css":
+                    charset = part.get_content_charset() or 'utf-8'
+                    css_part = part.get_payload(decode=True).decode(charset, errors='replace')
+                    css_content += f"\n<style>\n{css_part}\n</style>\n"
                 elif content_type.startswith("image/") or part.get_filename():
                     # Extract attachments
                     filename = part.get_filename()
@@ -143,6 +148,12 @@ class HTMLProcessor:
                                 atomic_write_binary(file_path, payload)
                             except Exception as e:
                                 print(f"      [WARNING] Could not save attachment {filename}: {e}")
+            
+            if html_content and css_content:
+                if "</head>" in html_content:
+                    html_content = html_content.replace("</head>", f"{css_content}</head>")
+                else:
+                    html_content += css_content
         else:
             if message.get_content_type() == "text/html":
                 charset = message.get_content_charset() or 'utf-8'
