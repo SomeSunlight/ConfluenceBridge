@@ -88,16 +88,33 @@ def get_run_title(args, base_url, platform_config, auth_info):
 # --- Content Cleaning (The "Data Diet") ---
 
 def extract_html_from_mhtml(file_path):
-    """ Extracts the main HTML part from a MHTML file. """
+    """ Extracts the main HTML part and CSS from a MHTML file. """
     try:
         with open(file_path, 'rb') as f:
             message = email.message_from_bytes(f.read())
 
+        html_content = None
+        css_content = ""
+
         if message.is_multipart():
             for part in message.walk():
-                if part.get_content_type() == "text/html":
+                content_type = part.get_content_type()
+                if content_type == "text/html":
                     charset = part.get_content_charset() or 'utf-8'
-                    return part.get_payload(decode=True).decode(charset, errors='replace')
+                    html_content = part.get_payload(decode=True).decode(charset, errors='replace')
+                elif content_type == "text/css":
+                    charset = part.get_content_charset() or 'utf-8'
+                    css_part = part.get_payload(decode=True).decode(charset, errors='replace')
+                    css_content += f"\n<style type='text/css'>\n{css_part}\n</style>\n"
+            
+            if html_content and css_content:
+                if "<body>" in html_content:
+                    html_content = html_content.replace("<body>", f"<body>\n{css_content}")
+                elif "<body " in html_content:
+                    html_content = re.sub(r'(<body[^>]*>)', rf'\1\n{css_content}', html_content, count=1)
+                else:
+                    html_content += css_content
+            return html_content
         else:
             if message.get_content_type() == "text/html":
                 charset = message.get_content_charset() or 'utf-8'
