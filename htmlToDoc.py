@@ -65,9 +65,9 @@ body {
 
 /* --- Headers --- */
 h1, h2, h3, h4, h5, h6 { bookmark-level: none; color: #172b4d; }
-h1 { font-size: 20pt; border-bottom: 2px solid #0052cc; margin-top: 0; padding-bottom: 5px; }
-h2 { font-size: 16pt; margin-top: 1.5em; border-bottom: 1px solid #eee; }
-h3 { font-size: 13pt; margin-top: 1.2em; }
+h1 { font-size: 16pt; border-bottom: 2px solid #0052cc; margin-top: 0; padding-bottom: 5px; }
+h2 { font-size: 15pt; margin-top: 1.5em; border-bottom: 1px solid #eee; }
+h3 { font-size: 14pt; margin-top: 1.2em; }
 h4, h5 { font-size: 11pt; font-weight: bold; margin-top: 1em; }
 
 /* --- Links --- */
@@ -105,9 +105,28 @@ a[href^="http"]::after, a[href^="https"]::after {
 /* --- Images --- */
 img { 
     max-width: 100%; 
+    max-height: 90vh; /* Verhindert das Abschneiden unten: Skaliert hohe Bilder maximal auf Seitenhöhe */
+    object-fit: contain; /* Behält die Proportionen beim Skalieren bei */
     height: auto; 
     display: block; 
     margin: 10px 0; 
+    page-break-inside: avoid; /* Zwingt WeasyPrint, das Bild ggf. komplett auf die nächste Seite zu schieben */
+}
+
+/* --- SVGs & Draw.io --- */
+/* Erlaubt es WeasyPrint, inline SVGs (insb. von Draw.io) korrekt auf die Seite zu skalieren */
+svg {
+    max-width: 100% !important;
+    page-break-inside: avoid;
+}
+.drawio-macro {
+    max-width: 100% !important;
+    overflow: visible !important;
+    page-break-inside: avoid;
+}
+.drawio-macro svg {
+    min-width: 0 !important;
+    min-height: 0 !important;
 }
 
 /* --- Tables --- */
@@ -137,6 +156,8 @@ th { background-color: #f4f5f7 !important; font-weight: bold; }
 
 td img { 
     max-width: 100% !important; 
+    max-height: 85vh !important; /* Auch in Tabellen: Höhe begrenzen */
+    object-fit: contain;
     height: auto !important; 
     display: inline-block; 
     margin: 0;
@@ -183,25 +204,36 @@ DEFAULT_PDF_SETTINGS = """/* PDF PAGE CONFIGURATION */
 
 @page {
     size: A4 portrait;
-    margin: 20mm;
+    margin: 15mm;
     @bottom-center { content: "Page " counter(page); font-size: 9pt; }
 }
 
 @page landscape {
     size: A4 landscape;
-    margin: 20mm;
+    margin: 15mm;
     @bottom-center { content: "Page " counter(page); font-size: 9pt; }
 }
 
 @page portrait {
     size: A4 portrait;
-    margin: 20mm;
+    margin: 15mm;
     @bottom-center { content: "Page " counter(page); font-size: 9pt; }
 }
 
-@page chapter { size: A4 portrait; margin: 20mm; }
-@page section { size: A4 portrait; margin: 20mm; }
-@page body    { size: A4 portrait; margin: 20mm; }
+@page chapter { size: A4 portrait; margin: 15mm; }
+@page section { size: A4 portrait; margin: 15mm; }
+@page body    { size: A4 portrait; margin: 15mm; }
+
+/* --- WEASYPRINT WORKAROUNDS --- */
+/* Prevent the TOC from dictating the page break in a portrait context */
+.toc {
+    page-break-after: auto !important;
+}
+
+/* Use modern "break" properties for a hard context switch */
+.chapter.landscape-wrapper {
+    break-before: right !important; /* Often forces a clean new page context in WeasyPrint */
+}
 """
 
 # --- Screen Optimization CSS (Injected only for --html) ---
@@ -308,6 +340,102 @@ def clean_content(soup):
     for cls in ui_classes:
         for tag in soup.find_all(class_=cls): tag.decompose()
     for tag in soup.find_all(['div', 'span'], attrs={'aria-hidden': 'true'}): tag.decompose()
+    for tag in soup.find_all('img', id=re.compile(r'^comments-icon')): tag.decompose()
+
+    # --- SVG / Draw.io responsive fix ---
+    # Draw.io macros often use fixed pixel sizes. We must strip them to prevent cropping.
+    for svg in soup.find_all('svg'):
+        style = svg.get('style', '')
+        w, h = None, None
+        
+        # 1. Find intrinsic dimensions
+        if svg.has_attr('viewBox'):
+            parts = svg['viewBox'].split()
+            if len(parts) == 4:
+                w, h = parts[2], parts[3]
+        
+        if not w or not h:
+            m_w = re.search(r'(?:min-)?width:\s*([0-9.]+)px', style)
+            m_h = re.search(r'(?:min-)?height:\s*([0-9.]+)px', style)
+            if m_w and m_h:
+                w, h = m_w.group(1), m_h.group(1)
+            elif svg.has_attr('width') and svg.has_attr('height'):
+                w_attr = svg['width'].replace('px', '')
+                h_attr = svg['height'].replace('px', '')
+                if w_attr.replace('.', '').isdigit() and h_attr.replace('.', '').isdigit():
+                    w, h = w_attr, h_attr
+                    
+        # 2. Apply intrinsic dimensions for WeasyPrint and clean fixed CSS
+        if w and h:
+            if not svg.has_attr('viewBox'):
+                svg['viewBox'] = f"0 0 {w} {h}"
+            svg['width'] = w
+            svg['height'] = h
+            
+        svg['style'] = re.sub(r'(?:min-)?(?:width|height):\s*[0-9.]+px;?', '', style)
+        
+        # 3. Clean fixed dimensions from the parent wrapper
+        parent = svg.find_parent('div', class_='drawio-macro')
+        if parent:
+            p_style = parent.get('style', '')
+            parent['style'] = re.sub(r'(?:min-)?(?:width|height):\s*[0-9.]+px;?', '', p_style)
+
+        # 4. WeasyPrint Compatibility: Clean modern CSS & unsupported SVG tags
+        temp_soup = BeautifulSoup("", "html.parser")
+        for element in svg.find_all(True):
+            if getattr(element, 'attrs', None) is None:
+                continue
+
+            # WeasyPrint does not render HTML inside SVGs. Extract text as fallback.
+            if element.name == 'foreignobject':
+                x_val = element.get('x')
+                y_val = element.get('y')
+                
+                # Draw.io often hides coordinates in inner div styles (margin-left, padding-top)
+                if x_val is None or y_val is None:
+                    inner = element.find('div')
+                    if inner and inner.has_attr('style'):
+                        st = inner['style']
+                        ml = re.search(r'margin-left:\s*([0-9.]+)px', st)
+                        pt = re.search(r'padding-top:\s*([0-9.]+)px', st)
+                        if ml: x_val = ml.group(1)
+                        if pt: y_val = pt.group(1)
+                        
+                x_val = x_val or '0'
+                y_val = y_val or '0'
+
+                text_content = element.get_text(separator=' ', strip=True)
+                if text_content:
+                    text_tag = temp_soup.new_tag('text')
+                    text_tag.string = text_content
+                    text_tag['x'] = x_val
+                    try:
+                        # SVG text is positioned by baseline, add offset
+                        text_tag['y'] = str(float(y_val) + 10)
+                    except:
+                        text_tag['y'] = str(y_val)
+                    text_tag['font-size'] = '9px'
+                    text_tag['font-family'] = 'sans-serif'
+                    text_tag['fill'] = '#000'
+                    element.insert_after(text_tag)
+                element.decompose()
+                continue
+
+            if element.has_attr('style'):
+                style_str = element['style']
+                if 'light-dark' in style_str:
+                    style_str = re.sub(r'light-dark\(\s*(rgba?\([^)]+\)|#[a-zA-Z0-9]+|[a-zA-Z]+|var\([^)]+\))\s*,\s*(?:rgba?\([^)]+\)|#[a-zA-Z0-9]+|[a-zA-Z]+|var\([^)]+\))\s*\)', r'\1', style_str)
+                if 'var(' in style_str:
+                    style_str = re.sub(r'var\([^,]+,\s*([^)]+)\)', r'\1', style_str)
+                element['style'] = style_str
+            
+            # SVG drop-shadow filters often crash WeasyPrint
+            if element.has_attr('filter'):
+                del element['filter']
+            # Non-standard Draw.io attribute
+            if element.has_attr('transformorigin'):
+                del element['transformorigin']
+
     return soup
 
 
@@ -462,7 +590,7 @@ def process_tree(root_node, output_base, pages_dir, css_files, do_pdf, do_previe
         preview_doc = f"""
         <!DOCTYPE html><html><head><meta charset="utf-8"><title>PDF Preview (Debug)</title>
         {css_links_html}
-        <style>body {{ background: #ccc; }} .chapter {{ background: white; margin: 20px auto; padding: 2cm; max-width: 21cm; box-shadow: 0 0 10px rgba(0,0,0,0.5); }}</style>
+        <style>body {{ background: #ccc; }} .chapter {{ background: white; margin: 20px auto; padding: 1.5cm; max-width: 21cm; box-shadow: 0 0 10px rgba(0,0,0,0.5); }}</style>
         </head><body>{html_body_root_level}</body></html>
         """
         with open(preview_out_path, 'w', encoding='utf-8') as f:

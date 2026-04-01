@@ -122,7 +122,7 @@ class MHTMLDetector:
         if verbose:
             print(f"\n[Analysis Complete] {stats['needs_mhtml']}/{stats['total']} pages require MHTML download")
             if stats['patterns']['table_filter'] > 0:
-                print(f"  • Table Filter with problematic filters (numberfilter/iconfilter/userfilter/datefilter): {stats['patterns']['table_filter']}")
+                print(f"  • Table Filter with problematic filters (numberfilter/iconfilter/userfilter/datefilter/hideColumns): {stats['patterns']['table_filter']}")
             if stats['patterns'].get('jira_macro', 0) > 0:
                 print(f"  • Jira Macros (--mhtml-jira): {stats['patterns']['jira_macro']}")
             if stats['patterns'].get('manual_force', 0) > 0:
@@ -180,7 +180,7 @@ class MHTMLDetector:
         Detects Table Filter macros with problematic filter parameters.
         
         Only Table Filter macros with specific filter types (numberfilter, iconfilter, 
-        userfilter, datefilter) require MHTML download, as these cause slow JavaScript 
+        userfilter, datefilter, hideColumns) require MHTML download, as these cause slow JavaScript 
         filtering that leads to backend timeouts.
         
         Args:
@@ -205,7 +205,8 @@ class MHTMLDetector:
             'numberfilter',
             'iconfilter',
             'userfilter',
-            'datefilter'
+            'datefilter',
+            'hideColumns'
         ]
 
         for filter_name in problematic_filters:

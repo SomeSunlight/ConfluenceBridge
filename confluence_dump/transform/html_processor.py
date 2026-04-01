@@ -77,19 +77,21 @@ class HTMLProcessor:
                 print(f"    [MHTML] Page {page_id} generated from Playwright MHTML download")
                 mhtml_bytes = mhtml_auto_path.read_bytes()
             
+        api_html = content_path.read_text(encoding='utf-8') if content_path.exists() else ""
+
         if mhtml_bytes:
             raw_html = self._extract_and_clean_mhtml(mhtml_bytes, page_id)
             
             # Fallback + Error message if MHTML is corrupted
             if not raw_html:
                 print(f"    [WARNING] Could not parse MHTML! Falling back to standard HTML.")
-                if content_path.exists():
-                    raw_html = content_path.read_text(encoding='utf-8')
+                if api_html:
+                    raw_html = api_html
                 else:
                     raise ValueError(f"MHTML is corrupted and no fallback HTML exists for page {page_id}")
                     
-        elif content_path.exists():
-            raw_html = content_path.read_text(encoding='utf-8')
+        elif api_html:
+            raw_html = api_html
         else:
             raise FileNotFoundError(f"Neither content.html nor content.mhtml found for page {page_id}")
             
@@ -102,7 +104,8 @@ class HTMLProcessor:
             page_id,
             exported_page_ids,
             css_files,
-            storage_content
+            storage_content,
+            api_html
         )
         
         return processed_html
@@ -243,12 +246,38 @@ class HTMLProcessor:
 
     def _transform_html(self, html_content: str, page_metadata: Dict[str, Any],
                        page_id: str, exported_page_ids: Set[str],
-                       css_files: Optional[list], storage_content: Optional[str]) -> str:
+                       css_files: Optional[list], storage_content: Optional[str],
+                       api_html: str = "") -> str:
         """
         Core HTML transformation logic (extracted from myModules.process_page_content).
         All network-dependent code removed.
         """
         soup = BeautifulSoup(html_content or "", 'html.parser')
+        
+        # Parse API HTML (content.html) to build a precise mapping of data-macroid -> attachment filename
+        api_soup = BeautifulSoup(api_html, 'html.parser') if api_html else None
+        macroid_to_img = {}
+        ordered_drawio_imgs = []
+        
+        if api_soup:
+            from urllib.parse import urlparse, unquote
+            import os
+            
+            # Find all macros that might contain images (REST API HTML)
+            for macro in api_soup.find_all(attrs={'data-macroid': True}):
+                macroid = macro.get('data-macroid')
+                img = macro.find('img')
+                if img and img.get('src'):
+                    src = img.get('src')
+                    filename = unquote(os.path.basename(urlparse(src).path))
+                    macroid_to_img[macroid] = filename
+            
+            # Also build an ordered list of all drawio-like image filenames as a fallback
+            for img in api_soup.find_all('img'):
+                src = img.get('src')
+                if src:
+                    filename = unquote(os.path.basename(urlparse(src).path))
+                    ordered_drawio_imgs.append(filename)
         current_page_title = page_metadata.get('title', 'Untitled')
         
         # 0. Initialize Link Rewriter and Anchor Repair
@@ -404,20 +433,70 @@ class HTMLProcessor:
             expand.replace_with(details)
 
         # 1.7 Repair Draw.io Macros in MHTML (Reconstruct missing image tags)
-        for drawio_macro in soup.find_all(class_=re.compile(r'\bconf-macro\b'), attrs={'data-macro-name': 'drawio'}):
-            # Der Name des Diagramms ist oft in einem unsichtbaren div versteckt
-            name_div = drawio_macro.find('div', style=lambda s: s and 'display:none' in s.replace(' ', '').lower())
-            if name_div and name_div.string:
-                diagram_name = name_div.string.strip()
-                if not diagram_name.lower().endswith('.png'):
-                    diagram_name += '.png'
+        page_attachments_dir = self.raw_data_dir / page_id / 'attachments'
+        available_attachments = set()
+        if page_attachments_dir.exists():
+            available_attachments = {f.name for f in page_attachments_dir.iterdir() if f.is_file()}
+
+        used_drawio_names = {}
+        for drawio_node in soup.find_all(class_=re.compile(r'\bdrawio-macro\b')):
+            macroid = drawio_node.get('data-macroid')
+            diagram_name = None
+            
+            # STRATEGY 1: Exact matching via data-macroid from REST API HTML
+            # This solves the issue when multiple versions/layers of a Drawio diagram are exported with hashes.
+            if macroid and macroid in macroid_to_img:
+                candidate = macroid_to_img[macroid]
+                if candidate in available_attachments:
+                    diagram_name = candidate
+
+            # Find the hidden title in the parent element (for fallback and cleanup)
+            name_div = drawio_node.parent.find('div', style=lambda s: s and 'display:none' in s.replace(' ', '').lower())
+            
+            # STRATEGY 2: Heuristic Fallback (if data-macroid could not be matched)
+            if not diagram_name and name_div and name_div.string:
+                base_name = name_div.string.strip()
+                if base_name.lower().endswith('.png'):
+                    base_name = base_name[:-4]
                 
-                # Erstelle ein sauberes img-Tag, das auf das Attachment verweist
-                img_tag = soup.new_tag('img', src=f"../attachments/{diagram_name}", attrs={'class': 'drawio-diagram-image', 'style': 'max-width: 100%;'})
+                # Find all matching attachments that start with this name
+                candidates = [f for f in available_attachments if f.lower().startswith(base_name.lower()) and f.lower().endswith('.png')]
+                candidates.sort(key=len)
                 
-                # Ersetze den kaputten Makro-Inhalt durch das Bild
-                drawio_macro.clear()
-                drawio_macro.append(img_tag)
+                # Prioritize the order in which the images were found in the API HTML
+                api_ordered_candidates = [f for f in ordered_drawio_imgs if f in candidates]
+                
+                if base_name not in used_drawio_names:
+                    used_drawio_names[base_name] = 0
+                else:
+                    used_drawio_names[base_name] += 1
+                    
+                idx = used_drawio_names[base_name]
+                
+                if idx < len(api_ordered_candidates):
+                    diagram_name = api_ordered_candidates[idx]
+                elif idx < len(candidates):
+                    diagram_name = candidates[idx]
+                else:
+                    diagram_name = f"{base_name}.png" if idx == 0 else f"{base_name}-{idx}.png"
+            
+            if not diagram_name:
+                # Ultimate fallback (should never happen)
+                diagram_name = f"drawio-{macroid}.png"
+                
+            # Create a clean img tag pointing to the attachment
+            img_tag = soup.new_tag('img', src=f"../attachments/{diagram_name}", attrs={'class': 'drawio-diagram-image', 'style': 'max-width: 100%;'})
+            
+            # Replace the complex SVG macro with the image
+            drawio_node.replace_with(img_tag)
+            # Cleanly remove the hidden name div
+            if name_div:
+                name_div.decompose()
+
+        # 1.8 Warn for remaining SVGs
+        remaining_svgs = soup.find_all('svg')
+        if remaining_svgs:
+            print(f"    [WARNING] Page contains {len(remaining_svgs)} <svg> tag(s). Complex, inline generated SVGs may cause rendering issues during PDF generation with WeasyPrint.")
 
         # 2. Image Rewriting (local paths only - no downloads)
         soup = self.link_rewriter.rewrite_images(soup)

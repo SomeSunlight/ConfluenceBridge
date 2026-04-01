@@ -71,17 +71,21 @@ def get_run_title(args, base_url, platform_config, auth_info):
     elif args.command == 'label':
         return f"Export {args.label}"
     elif args.command in ('single', 'tree'):
+        page_ids = [pid.strip() for pid in args.pageid.split(',')]
+        first_page_id = page_ids[0]
         try:
             from confluence_dump.api.client import ConfluenceClient
             client = ConfluenceClient(base_url, platform_config, auth_info, args.context_path)
-            page_data = client.get_page_basic(args.pageid)
-            if page_data and 'title' in page_data:
-                return page_data['title']
-            else:
-                return f"Page {args.pageid}"
+            page_data = client.get_page_basic(first_page_id)
+            title = page_data['title'] if page_data and 'title' in page_data else f"Page {first_page_id}"
+            if len(page_ids) > 1:
+                return f"{title} and {len(page_ids)-1} others"
+            return title
         except Exception as e:
             print(f"Warning: Could not fetch page title: {e}", file=sys.stderr)
-            return f"Page {args.pageid}"
+            if len(page_ids) > 1:
+                return f"Pages {first_page_id} and others"
+            return f"Page {first_page_id}"
     return "Export"
 
 
@@ -420,16 +424,19 @@ def process_page(page_id, global_args, active_css_files=None, exported_page_ids=
         # Extract page (saves to raw-data/)
         success = extractor.extract_page(page_id, force=False, verbose=verbose)
         
-        if not success:
-            return
-        
-        # Collect metadata for sidebar generation
+        # Collect metadata for sidebar generation (always load this, even if download was skipped)
         page_dir = raw_data_dir / page_id
         meta_path = page_dir / 'meta.json'
         if meta_path.exists():
             import json
-            page_meta = json.loads(meta_path.read_text(encoding='utf-8'))
-            collect_page_metadata(page_meta)
+            try:
+                page_meta = json.loads(meta_path.read_text(encoding='utf-8'))
+                collect_page_metadata(page_meta)
+            except Exception:
+                pass
+                
+        if not success:
+            return
         
         # Note: Manifest will be saved after all pages are processed
         return
@@ -888,9 +895,21 @@ def handle_tree(args, active_css_files, exclude_ids):
     print(f"Starting 'tree' dump for {args.pageid}")
     from confluence_dump.api.client import ConfluenceClient
     client = ConfluenceClient(args.base_url, platform_config, auth_info, args.context_path)
-    target_ids, all_pages_list = scan_tree_inventory(client, args.pageid, args, exclude_ids)
-    save_sidebars(args.outdir, target_ids)
-    run_download_phase(args, all_pages_list, target_ids, active_css_files)
+    
+    all_target_ids = set()
+    full_pages_list = []
+    
+    page_ids = [pid.strip() for pid in args.pageid.split(',')]
+    for pid in page_ids:
+        target_ids, all_pages_list = scan_tree_inventory(client, pid, args, exclude_ids)
+        all_target_ids.update(target_ids)
+        # Add only new pages to preserve order and avoid duplicates across trees
+        for p in all_pages_list:
+            if p not in full_pages_list:
+                full_pages_list.append(p)
+                
+    save_sidebars(args.outdir, all_target_ids)
+    run_download_phase(args, full_pages_list, all_target_ids, active_css_files)
 
 
 def handle_label(args, active_css_files, exclude_ids):
@@ -906,6 +925,7 @@ def handle_single(args, active_css_files, exclude_ids):
     print(f"Starting 'single' dump for {args.pageid}")
     
     use_etl = hasattr(args, 'use_etl') and args.use_etl
+    page_ids = [pid.strip() for pid in args.pageid.split(',')]
     
     if use_etl:
         # ETL mode: Use manifest
@@ -916,9 +936,10 @@ def handle_single(args, active_css_files, exclude_ids):
         manifest = Manifest(raw_data_dir)
         
         # Update manifest with fresh sort order
-        manifest.set_tree_order([args.pageid])
+        manifest.set_tree_order(page_ids)
         
-        process_page(args.pageid, args, active_css_files, {args.pageid}, verbose=True, manifest=manifest)
+        for pid in page_ids:
+            process_page(pid, args, active_css_files, set(page_ids), verbose=True, manifest=manifest)
         
         # Save manifest
         manifest.save()
@@ -935,13 +956,15 @@ def handle_single(args, active_css_files, exclude_ids):
         
         # Build phase
         print(f"\nPhase 4 (Transform & Load): Building HTML files...")
-        run_build_phase(args, {args.pageid}, active_css_files, manifest)
+        run_build_phase(args, set(page_ids), active_css_files, manifest)
     else:
         # Legacy mode
-        root = myModules.get_page_full(args.pageid, args.base_url, platform_config, auth_info, args.context_path)
-        if root: collect_page_metadata(root)
-        save_sidebars(args.outdir, {args.pageid})
-        process_page(args.pageid, args, active_css_files, {args.pageid}, verbose=True)
+        for pid in page_ids:
+            root = myModules.get_page_full(pid, args.base_url, platform_config, auth_info, args.context_path)
+            if root: collect_page_metadata(root)
+        save_sidebars(args.outdir, set(page_ids))
+        for pid in page_ids:
+            process_page(pid, args, active_css_files, set(page_ids), verbose=True)
 
 
 def handle_all_spaces(args, active_css_files, exclude_ids):
@@ -1037,12 +1060,12 @@ def main():
 
     subs = parser.add_subparsers(dest='command', required=False, title="Commands")
 
-    p_single = subs.add_parser('single', help="Dump a single page")
-    p_single.add_argument('-p', '--pageid', required=True, help="Page ID")
+    p_single = subs.add_parser('single', help="Dump a single page (or comma-separated list of pages)")
+    p_single.add_argument('-p', '--pageid', required=True, help="Page ID (or comma-separated list of IDs)")
     p_single.set_defaults(func=handle_single)
 
-    p_tree = subs.add_parser('tree', help="Dump a page tree (Recursive)")
-    p_tree.add_argument('-p', '--pageid', required=True, help="Root Page ID")
+    p_tree = subs.add_parser('tree', help="Dump a page tree (Recursive, accepts comma-separated list of root IDs)")
+    p_tree.add_argument('-p', '--pageid', required=True, help="Root Page ID (or comma-separated list of IDs)")
     p_tree.set_defaults(func=handle_tree)
 
     p_space = subs.add_parser('space', help="Dump an entire space (Recursive from Homepage)")
@@ -1479,6 +1502,7 @@ def main():
                 print(f"\n[INFO] Initializing Playwright (Early Authentication)...")
                 dl = MHTMLDownloader(Path(args.outdir), args.base_url)
                 dl.verify_playwright_auth()
+                MHTMLDownloader._global_auth_verified = True
             elif choice == '3' and requires_playwright:
                 from confluence_dump.playwright.mhtml_downloader import MHTMLDownloader
                 MHTMLDownloader._global_auth_verified = True

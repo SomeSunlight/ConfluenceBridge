@@ -288,8 +288,8 @@ python3 confluenceDumpToHTML.py [OPTIONS] <COMMAND> [ARGS]
 
 ### Commands
 - **`space`**: Dumps an entire space. (`-sp SPACEKEY`)
-- **`tree`**: Dumps a specific page and its descendants. (`-p PAGEID`)
-- **`single`**: Dumps a single page. (`-p PAGEID`)
+- **`tree`**: Dumps a specific page and its descendants. Accepts multiple comma-separated IDs. (`-p PAGEID1,PAGEID2`)
+- **`single`**: Dumps a single page. Accepts multiple comma-separated IDs. (`-p PAGEID1,PAGEID2`)
 - **`label`**: "Forest Mode". Dumps all pages with a specific label as root trees. (`-l LABEL`)
     - Use `--exclude-label` to prune specific subtrees (e.g. 'archived').
 - **`all-spaces`**: Dumps all visible spaces.
@@ -329,6 +329,17 @@ python3 confluenceDumpToHTML.py --use-etl \
   --context-path "/wiki" \
   -o "./output" \
   tree --pageid 123456
+```
+
+**Multiple Specific Pages / Trees:**
+(Especially useful for testing or tailored exports. Just pass a comma-separated list without spaces.)
+```bash
+python3 confluenceDumpToHTML.py --use-etl \
+  --base-url "https://confluence.corp.com" \
+  --profile dc \
+  --context-path "/wiki" \
+  -o "./output" \
+  tree --pageid 123456,789012,345678
 ```
 
 **Label-based with exclusion:**
@@ -397,9 +408,12 @@ python3 htmlToDoc.py --site-dir "./output/2025-01-01 Space IT" --pdf
 - `--html`: Generate single-file Master HTML (for LLM context windows).
 - `--preview`: Generate debug HTML (linked to local CSS).
 ### Customizing the PDF
-The layout is controlled by CSS files in the `styles/` folder of your export:
-- **`pdf_settings.css`:** Configure Page Size (A4/Letter), Orientation, and Margins.
-- **`site.css`:** General styles (detected automatically).
+The layout is controlled by CSS files in the `styles/` folder of your export. They are applied in a strict priority order (files loaded later overwrite earlier ones):
+
+1. **`site.css`:** Native Confluence styles (lowest priority).
+2. **`pdf_base.css`:** The toolbox's default PDF layout and layout resets.
+3. **Custom CSS (`*.css`):** Any other CSS files you place in the `styles/` folder will be loaded here. Use this for your company's Corporate Identity or specific macros.
+4. **`pdf_settings.css`:** Configures Page Size (A4/Letter), Orientation, Margins, and critical WeasyPrint workarounds (highest priority).
 
 ## Credits & License
 

@@ -65,4 +65,8 @@ The extraction and processing is divided into 5 distinct phases:
         
     - **Solution:** We scan the source HTML for `size: landscape`. If found, we wrap the content in a specific div (`.landscape-wrapper`) which maps to a named page `@page landscape` in the CSS.
         
-    - **CSS Priority:** `DEFAULT_PDF_BASE_CSS` -> `site.css` -> `pdf_settings.css`.
+    - **CSS Priority:** The order of inclusion determines the priority (later rules overwrite earlier ones):
+        1. `site.css` (Confluence defaults)
+        2. `pdf_base.css` (`DEFAULT_PDF_BASE_CSS` - Toolbox base styles)
+        3. Custom CSS files (any user-provided `*.css` in `styles/`)
+        4. `pdf_settings.css` (`DEFAULT_PDF_SETTINGS` - Page configs & WeasyPrint workarounds, highest priority)

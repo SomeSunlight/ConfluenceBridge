@@ -89,6 +89,17 @@ class PageExtractor:
             html_content = page_full.get('body', {}).get('export_view', {}).get('value', '')
             if not html_content:
                 html_content = page_full.get('body', {}).get('view', {}).get('value', '')
+            else:
+                # Confluence often strips layout macros (like landscape CSS) from the export_view.
+                # We salvage these <style> tags from the standard 'view' and inject them.
+                view_content = page_full.get('body', {}).get('view', {}).get('value', '')
+                if view_content:
+                    import re
+                    style_blocks = re.findall(r'(<style[^>]*>.*?</style>)', view_content, re.IGNORECASE | re.DOTALL)
+                    for block in style_blocks:
+                        if ('@page' in block or 'landscape' in block) and block not in html_content:
+                            html_content += f"\n<!-- Recovered Layout CSS -->\n{block}\n"
+                            
             atomic_write_text(content_path, html_content)
             
             # Storage Format (optional)
