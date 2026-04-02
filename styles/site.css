@@ -136,7 +136,7 @@ h1,
 .aui-page-header-marketing .aui-page-header-main h1,
 .aui-page-header-marketing .aui-page-header-main h2 {
     color: #333;
-    font-size: 24px;
+    font-size: 16px;
     font-weight: normal;
     line-height: 1.25;
     text-transform: none;
@@ -145,7 +145,7 @@ h1,
 
 h2 {
     color: #333;
-    font-size: 22px;
+    font-size: 15px;
     font-weight: normal;
     line-height: 1.25;
     text-transform: none;
@@ -156,7 +156,7 @@ h3,
 .aui-page-header-hero .aui-page-header-main p,
 .aui-page-header-marketing .aui-page-header-main p {
     color: #333;
-    font-size: 20px;
+    font-size: 14px;
     font-weight: normal;
     line-height: 1.5;
     text-transform: none;
@@ -165,7 +165,7 @@ h3,
 
 h4 {
     color: #333;
-    font-size: 16px;
+    font-size: 11px;
     font-weight: bold;
     line-height: 1.25;
     text-transform: none;
@@ -174,7 +174,7 @@ h4 {
 
 h5 {
     color: #333;
-    font-size: 14px;
+    font-size: 11px;
     font-weight: bold;
     line-height: 1.42857143;
     text-transform: none;
@@ -183,7 +183,7 @@ h5 {
 
 h6 {
     color: #707070;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: bold;
     line-height: 1.66666667;
     text-transform: uppercase;
