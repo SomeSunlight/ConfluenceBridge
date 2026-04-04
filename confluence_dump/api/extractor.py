@@ -82,6 +82,16 @@ class PageExtractor:
             meta_path = page_dir / 'meta.json'
             content_path = page_dir / 'content.html'
             storage_path = page_dir / 'storage.xml'
+            mhtml_path = page_dir / 'content.mhtml'
+            
+            # Delete old MHTML file if we download a new version, so Playwright re-downloads it
+            if mhtml_path.exists():
+                try:
+                    mhtml_path.unlink()
+                    if verbose:
+                        print(f"    [INFO] Deleted old MHTML file for {page_id} to force re-download.")
+                except OSError as e:
+                    print(f"    [WARNING] Could not delete old MHTML file {mhtml_path.name}. It might be locked by another program: {e}", file=sys.stderr)
             
             atomic_write_json(meta_path, page_full)
             
@@ -122,8 +132,7 @@ class PageExtractor:
                 title,
                 version,
                 page_full.get('version', {}).get('when', ''),
-                parent_id,
-                needs_mhtml=False  # Will be set by analysis phase
+                parent_id
             )
             
             return True

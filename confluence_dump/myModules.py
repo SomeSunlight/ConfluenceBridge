@@ -402,52 +402,33 @@ def process_page_content(html_content, page_metadata, base_url, auth_info, css_f
     span_date = soup.new_tag('span', attrs={'class': 'last-modified'})
     span_date.string = date_str
     meta_li.append(span_date)
+    meta_li.append(".")
     meta_ul.append(meta_li)
+    
+    dl_li = soup.new_tag('li', attrs={'class': 'page-metadata-download-info'})
+    dl_li.append("This document was downloaded by ")
+    a_cb = soup.new_tag('a', href="https://github.com/SomeSunlight/ConfluenceBridge")
+    a_cb.string = "ConfluenceBridge"
+    dl_li.append(a_cb)
+    current_time_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+    dl_li.append(f" on {current_time_str} from page {page_id} from ")
+    webui = page_metadata.get('_links', {}).get('webui', '')
+    
+    if webui:
+        original_url = base_url.rstrip('/') + '/' + webui.lstrip('/')
+    else:
+        original_url = base_url
+        
+    a_here = soup.new_tag('a', href=original_url, attrs={'class': 'external-link'})
+    a_here.string = "here"
+    dl_li.append(a_here)
+    dl_li.append(".")
+    meta_ul.append(dl_li)
+    
     meta_div.append(meta_ul)
 
-    soup.body.insert(0, meta_div)
-    soup.body.insert(0, h1)
-
-    # CSS Injection
-    style_tag = soup.new_tag('style')
-    style_tag.string = """
-        /* Global Reset */
-        *, *::before, *::after { box-sizing: border-box; }
-        body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-        .layout-container { display: flex; height: 100vh; overflow: hidden; }
-
-        #sidebar { 
-            flex: 0 0 auto; width: 350px; min-width: 50px; border-right: 1px solid #ddd; 
-            overflow-y: auto; padding: 10px; padding-left: 15px; padding-top: 60px; padding-right: 4px; 
-            background: #f4f5f7; font-size: 14px; resize: horizontal; position: relative;
-        }
-        #sidebar.collapsed { width: 0px !important; min-width: 0 !important; padding: 0; border: none; overflow: hidden; flex-basis: 0 !important; }
-        #sidebar-toggle { position: fixed; top: 15px; left: 15px; z-index: 9999; background: rgba(255, 255, 255, 0.9); border: 1px solid #ccc; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); font-size: 20px; cursor: pointer; color: #42526e; width: 32px; height: 32px; line-height: 30px; text-align: center; padding: 0; }
-        #sidebar-toggle:hover { background: #ebecf0; }
-        #resizer { width: 5px; cursor: col-resize; background-color: transparent; border-left: 1px solid #eee; flex: 0 0 auto; z-index: 10; }
-        #resizer:hover, #resizer.active { background-color: #4c9aff; }
-
-        #content { flex: 1; overflow-y: auto; padding: 40px 30px !important; max-width: 100%; }
-
-        h1 { margin-top: 0; color: #172b4d; font-size: 2em; font-weight: 600; }
-        .page-metadata { margin-bottom: 20px; font-size: 12px; color: #6b778c; }
-        .page-metadata ul { list-style: none; padding: 0; margin: 0; }
-        .page-metadata li { display: inline-block; margin-right: 10px; }
-
-        #sidebar ul { list-style: none; padding-left: 28px; margin: 0; }
-        #sidebar li { margin: 4px 0; white-space: normal; word-wrap: break-word; }
-        #sidebar li.leaf { list-style: disc; margin-left: 18px; } 
-        #sidebar li.folder { list-style: none; }
-        #sidebar summary { cursor: pointer; font-weight: 500; margin-bottom: 2px; color: #42526e; outline: none; }
-        #sidebar a { text-decoration: none; color: #42526e; }
-        #sidebar a:hover { color: #0052cc; text-decoration: underline; }
-        #sidebar a.active-page { color: #0052cc; font-weight: bold; }
-        #sidebar details > summary { list-style: none; }
-        #sidebar details > summary::-webkit-details-marker { display: none; }
-        #sidebar details > summary::before { content: '▶'; display: inline-block; font-size: 10px; margin-right: 6px; color: #6b778c; }
-        #sidebar details[open] > summary::before { transform: rotate(90deg); }
-    """
-    soup.head.append(style_tag)
+    # Wir fügen die Metadaten hier noch NICHT in den body ein. 
+    # Das machen wir erst nach dem Link-Rewriter.
 
     if css_files:
         for css_path in css_files:
@@ -544,6 +525,11 @@ def process_page_content(html_content, page_metadata, base_url, auth_info, css_f
                 a['href'] = base_url.rstrip('/') + current_href
             else:
                 a['href'] = current_href
+
+    # Metadaten NACH dem Link-Rewriter einfügen, damit der "here" Link nicht lokal umgeschrieben wird
+    if soup.body:
+        soup.body.insert(0, meta_div)
+        soup.body.insert(0, h1)
 
     # 4. Sidebar Injection
     if sidebar_html:

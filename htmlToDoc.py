@@ -165,11 +165,11 @@ td img {
 
 /* --- Metadata Box --- */
 .page-metadata { 
-    font-size: 8pt; color: #6b778c !important; border-bottom: 1px solid #eee; 
-    padding-bottom: 5px; margin-bottom: 20px; font-style: italic;
+    display: block; font-size: 8pt; color: #6b778c !important; border-bottom: 1px solid #eee; 
+    padding-bottom: 10px; margin-bottom: 35px; font-style: italic; line-height: 1.4;
 }
-.page-metadata ul { list-style: none; padding: 0; margin: 0; }
-.page-metadata li { display: inline; margin-right: 15px; }
+.page-metadata ul { display: block; list-style: none; padding: 0; margin: 0; }
+.page-metadata li { display: block; margin-bottom: 5px; }
 
 /* --- Code Blocks --- */
 pre, code { font-family: monospace; background: #f4f5f7 !important; padding: 2px 4px; border-radius: 3px; font-size: 9pt; }
@@ -198,31 +198,95 @@ h1, h2, h3, h4 { page-break-after: avoid; }
 .portrait-wrapper { page: portrait; width: 100%; }
 .landscape-wrapper { page: landscape; width: 100%; }
 .default-wrapper { page: auto; width: 100%; }
+
+/* ==========================================================================
+   CONFLUENCE PDF EXPORT: LANDSCAPE TABLES
+   Fix for rigid elements (preformatted text, code blocks, and images) 
+   that break the horizontal boundaries of table cells.
+   ========================================================================== */
+
+/* 1. Force preformatted text and code blocks to wrap */
+.div-landscape table pre, 
+.div-landscape table .code,
+.div-landscape table .code-block {
+    /* Preserve original indentation but allow text to wrap */
+    white-space: pre-wrap !important;       
+    
+    /* Break long continuous strings (e.g., URLs, log paths) to prevent overflow */
+    word-wrap: break-word !important;       
+    
+    /* Reduce font size for print readability and space efficiency */
+    font-size: 8pt !important;              
+    
+    /* Ensure line height remains compact after line breaks */
+    line-height: 1.2 !important;            
+    
+    /* Restrict maximum width to the parent cell */
+    max-width: 100% !important;
+}
+
+/* 2. Make images responsive within table cells */
+.div-landscape table img,
+.div-landscape table .confluence-embedded-image {
+    /* Prevent the image from exceeding the cell width */
+    max-width: 100% !important;             
+    
+    /* Override Confluence's hardcoded inline width attributes (e.g., width: 500px) */
+    width: auto !important;                 
+    
+    /* Maintain the original aspect ratio when the image scales down */
+    height: auto !important;                
+    
+    /* Include padding and borders in the element's total width/height calculations */
+    box-sizing: border-box !important;
+}
 """
 
 DEFAULT_PDF_SETTINGS = """/* PDF PAGE CONFIGURATION */
 
 @page {
     size: A4 portrait;
-    margin: 15mm;
-    @bottom-center { content: "Page " counter(page); font-size: 9pt; }
+    margin: 10mm;
+    @bottom-center { content: "Page " counter(page); font-size: 8pt; }
 }
 
 @page landscape {
     size: A4 landscape;
-    margin: 15mm;
-    @bottom-center { content: "Page " counter(page); font-size: 9pt; }
+    margin: 10mm;
+    @bottom-center { content: "Page " counter(page); font-size: 8pt; }
 }
 
 @page portrait {
     size: A4 portrait;
-    margin: 15mm;
-    @bottom-center { content: "Page " counter(page); font-size: 9pt; }
+    margin: 10mm;
+    @bottom-center { content: "Page " counter(page); font-size: 8pt; }
 }
 
-@page chapter { size: A4 portrait; margin: 15mm; }
-@page section { size: A4 portrait; margin: 15mm; }
-@page body    { size: A4 portrait; margin: 15mm; }
+@page chapter { size: A4 portrait; margin: 10mm; }
+@page section { size: A4 portrait; margin: 10mm; }
+@page body    { size: A4 portrait; margin: 10mm; }
+
+/* --- Parts of confluence pages, which are printed in landscape (important for LLM, to get content without additional cr) --- */
+.div-landscape {
+    page: landscape;
+    page-break-before: always;
+    page-break-after: always;
+}
+
+/* removes restrictions from scroll-containers */
+.div-landscape .table-wrap {
+    width: 100% !important;
+    overflow: visible !important;
+    margin: 0 !important; /* Verhindert seitliche Verschiebungen durch den Wrapper */
+}
+
+/* Enforces all tables to adapt strict to width of page, to prevent they get clipped */
+.div-landscape table,
+.div-landscape .confluenceTable {
+    width: 100% !important;
+    max-width: 100% !important;
+    table-layout: auto !important;
+}
 
 /* --- WEASYPRINT WORKAROUNDS --- */
 /* Prevent the TOC from dictating the page break in a portrait context */
@@ -590,8 +654,15 @@ def process_tree(root_node, output_base, pages_dir, css_files, do_pdf, do_previe
         preview_doc = f"""
         <!DOCTYPE html><html><head><meta charset="utf-8"><title>PDF Preview (Debug)</title>
         {css_links_html}
-        <style>body {{ background: #ccc; }} .chapter {{ background: white; margin: 20px auto; padding: 1.5cm; max-width: 21cm; box-shadow: 0 0 10px rgba(0,0,0,0.5); }}</style>
-        </head><body>{html_body_root_level}</body></html>
+        <style>
+            body {{ background: #ccc; }} 
+            .chapter {{ background: white; margin: 20px auto; padding: 1.5cm; max-width: 21cm; box-shadow: 0 0 10px rgba(0,0,0,0.5); }}
+            .preview-warning {{ background: #fff3cd; color: #856404; padding: 15px; text-align: center; font-family: sans-serif; font-size: 14px; border-bottom: 1px solid #ffeeba; margin-bottom: 20px; }}
+        </style>
+        </head><body>
+        <div class="preview-warning noprint"><strong>Tipp fürs CSS-Debugging:</strong> Aktiviere in den Browser-Entwicklertools (F12) unter <em>Rendering</em> die Option <strong>Emulate CSS media: print</strong>, um die exakten Schriftgrössen und Abstände des PDFs zu sehen!</div>
+        {html_body_root_level}
+        </body></html>
         """
         with open(preview_out_path, 'w', encoding='utf-8') as f:
             f.write(preview_doc)
