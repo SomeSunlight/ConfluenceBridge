@@ -1176,61 +1176,67 @@ div.shim {
     position: absolute
 }
 
-/* module-key = 'com.atlassian.auiplugin:icons', location = 'src/less/icons.less' */
+/* module-key = 'com.atlassian.auiplugin:split_aui.splitchunk.47718634a4', location = 'aui.splitchunk.47718634a4.css' */
 .aui-icon {
-    background-repeat: no-repeat;
+    --aui-icon-size: 16px;
+    --aui-icon-font: "Adgs Icons";
     background-position: 0 0;
+    background-repeat: no-repeat;
     border: none;
-    display: inline-block;
-    height: 16px;
+    display: inline-flex;
+    font-size: 0;
+    height: var(--aui-icon-size);
+    line-height: 0;
     margin: 0;
     padding: 0;
+    position: relative;
     text-align: left;
-    text-indent: -999em;
     vertical-align: text-bottom;
-    width: 16px
+    width: var(--aui-icon-size)
 }
 
-.aui-icon-small,
-.aui-icon-large {
-    line-height: 0;
-    position: relative;
-    vertical-align: text-top
+.aui-icon:before {
+    -moz-osx-font-smoothing: grayscale;
+    -webkit-font-smoothing: antialiased;
+    -webkit-text-stroke-width: 0;
+    font-family: var(--aui-icon-font);
+    font-style: normal;
+    font-weight: 400;
+    speak: none;
+    color: inherit;
+    content: var(--aui-ig,unset);
+    font-size: var(--aui-icon-size);
+    line-height: 1;
+    margin: auto;
+    text-indent: 0
 }
 
 .aui-icon-small {
-    height: 16px;
-    width: 16px
+    --aui-icon-size: 16px
 }
 
 .aui-icon-large {
-    height: 32px;
-    width: 32px
+    --aui-icon-size: 32px
 }
 
-.aui-icon-small:before,
-.aui-icon-large:before {
-    color: inherit;
-    font-family: "Atlassian Icons";
-    font-weight: normal;
-    -webkit-font-smoothing: antialiased;
-    font-style: normal;
-    left: 0;
-    line-height: 1;
-    position: absolute;
-    text-indent: 0;
-    speak: none;
-    top: 50%
+.aui-icon-date,form.aui .icon-date {
+    background-image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAARElEQVR4AWMoIBGANFgXr8dE927fw0TkaCDLSf/B4O7duwQZ5Gq4iwNccDGHI4gIARuA6tAYJGig1En0DyVMQFcnkQgA7103vYurRvEAAAAASUVORK5CYII=)
 }
 
-.aui-icon-small:before {
-    font-size: 16px;
-    margin-top: -8px
+.aui-icon-range,form.aui .icon-range {
+    background-image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAARklEQVR4AWMoIBGANFgXr8dEd7EBcjSQ5aT/YAA0gCCDXA0Q911wMSeIUGwA8gkyyNWAsJRyJ6F5mmQNhJ2EFtN0ijgSAQD0WQfB7IGD0QAAAABJRU5ErkJggg==)
 }
 
-.aui-icon-large:before {
-    font-size: 32px;
-    margin-top: -16px
+.aui-icon-required {
+    background-image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAARUlEQVR4AWOAgQsu5v8ZSAIIjaVAbA4yAEqXkmpAMxDfABkApZtJNYARiHtABkBpRlIN0AbiK0AcBMQrQHyGkQdGwSgAAPtCJnBUV/TSAAAAAElFTkSuQmCC)
+}
+
+.aui-icon-users,form.aui .icon-users {
+    background-image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAArElEQVR4AWOgCbAuXi8HxLuA+DOUliPVgN1A/B8J78epuKCgwBOIn0GxJ9SAz2gG/MSllgHK+Q/Fz/C5AFMtpuBzWBhADfkCpeWxqoUKeoE4QPwExMbhU9LUAm2UAuK9IL8D8R4glmQgYLIGCCMZsBYtDNZiqkUIlCH5qxxqwCc0Az5jVQsVfI4k+A5qwH90jEstA4SDwLgNwFQ7jAy4gSR4F2rAaTQDjuFSCwBFeGK4drVwMAAAAABJRU5ErkJggg==)
+}
+
+.aui-icon-help,.aui-icon-inline-help,form.aui .icon-help,form.aui .icon-inline-help {
+    background-image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAQAAAC1+jfqAAABG0lEQVR4AU2RNVYtQRiE+7m7IxHRlRxnHWwAty9lDbg7K4AUh7kJ7vDwEGLcvU6f6cP8NVJVXe3GFWGqWedSWBcLm2DxjmZuuSFGgxATu9X/tWt+zTAPdBNnnBNHl5whP0KDRJm1ezjimn6SpArlNhqRCLd02eA0h+SSzS47PJfuUEvEUMMN/yR/8UC5DVaKJej/T6PVGNbxjC1SeKtvBgfMawQVHhuGS9oC+8ninGW3XNq4MlwRDAyzx1enFDgxbOAFAhP0BpTHf7dIZyW64f1F1hqi3NLhW584Ej77StskKkIjD5Ra6y0bwlvLC7inyR31iCJd2MF5Zs+0U84wr58uq5U7bvBoEDxupBrVHCwi1LLJNaf8F4s4/xGiuqDPs2tUOAAAAABJRU5ErkJggg==)
 }
 
 .icon-move,
@@ -10231,6 +10237,80 @@ body.content-type-blogpost #main-header {
     margin-bottom: 0;
     padding-bottom: 5px
 }
+
+.confluence-information-macro {
+    background: var(--ds-background-input-hovered,#fcfcfc);
+    border-radius: 5px;
+    color: var(--ds-text,#333);
+    margin: 10px 0 1em 0;
+    min-height: 20px;
+    padding: 10px 10px 10px 36px;
+    position: relative
+}
+
+.confluence-information-macro.has-no-icon {
+    padding-left: 10px
+}
+
+.confluence-information-macro:first-child {
+    margin-top: 0
+}
+
+.confluence-information-macro-warning {
+    background: var(--ds-background-accent-red-subtlest,#ffeceb)
+}
+
+.confluence-information-macro-information {
+    background-color: var(--ds-background-accent-blue-subtlest,#e9f2ff)
+}
+
+.confluence-information-macro-tip {
+    background-color: var(--ds-background-accent-green-subtlest,#dcfff1)
+}
+
+.confluence-information-macro-note {
+    background: var(--ds-background-accent-yellow-subtlest,#fff7d6)
+}
+
+.confluence-information-macro>.title {
+    font-weight: bold;
+    margin-top: 0
+}
+
+.confluence-information-macro>.title>strong {
+    font-weight: inherit
+}
+
+.confluence-information-macro .confluence-information-macro-icon {
+    display: block;
+    left: 10px;
+    line-height: 20px;
+    position: absolute;
+    top: 12px
+}
+
+.confluence-information-macro .confluence-information-macro-icon.aui-iconfont-info-filled {
+    color: var(--ds-icon-information,#1d7afc)
+}
+
+.confluence-information-macro .confluence-information-macro-icon.aui-iconfont-error {
+    color: var(--ds-icon-danger,#cf4336)
+}
+
+.confluence-information-macro .confluence-information-macro-icon.aui-iconfont-approve {
+    color: var(--ds-icon-success,#14892c)
+}
+
+.confluence-information-macro .confluence-information-macro-icon.aui-iconfont-warning {
+    color: var(--ds-icon-warning,#e56910)
+}
+
+.confluence-information-macro>.confluence-information-macro-body>p:empty {
+    display: none
+}
+
+
+
 
 /* fix negative values in top margin of html pages by Confluence which result in overlapping lines */
 .page-metadata { margin-top: 0 !important }

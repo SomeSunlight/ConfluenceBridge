@@ -371,7 +371,7 @@ python3 confluenceDumpToHTML.py --use-etl --build-only \
 By default, the script analyzes the downloaded raw data. If it detects complex macros, it automatically launches a headless Chromium browser via Playwright, authenticates, and downloads a fully rendered `.mhtml` snapshot into `raw-data/[PageID]/content.mhtml`. The script automatically extracts the HTML and attachments from this archive.
 
 **The Manual Solution (Fallback):**
-If the automated Playwright download fails (e.g., due to strict company SSO/MFA that blocks headless browsers), you can provide the MHTML files manually:
+If the automated Playwright download fails (e.g., due to strict company SSO/MFA that blocks headless browsers or persistent failures on specific pages), you can provide the MHTML files manually:
 1. Open the problematic Confluence page in Chrome/Edge.
 2. Save the page as **"Webpage, Single File (*.mhtml)"**.
 3. Rename it to exactly `[PageID].mhtml` (e.g., `123456.mhtml`).
