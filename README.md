@@ -16,6 +16,44 @@ This toolbox exports content from a Confluence instance (Cloud or Data Center) i
 - **🆕 Delta-Sync:** Only changed pages are downloaded – saves time and network traffic.
 - **🆕 Self-Contained Workspaces:** All parameters are saved in the workspace. Future syncs only require the path.
 - **🆕 Offline Rebuild:** HTML files can be regenerated from raw data at any time (e.g., after CSS changes).
+
+## Check ConfluenceBridge's source version
+
+The export scripts remain separate: `confluenceDumpToHTML.py` downloads/synchronizes HTML, and `htmlToDoc.py` publishes PDF/HTML. To identify the **tool's actual installed source revision**, use a lightweight, dependency-free version entrypoint. It neither loads Confluence credentials nor starts an export.
+
+From a cloned repository, on Windows, WSL or Linux:
+
+~~~bash
+python -m confluence_dump --version
+# confluencebridge 3.0.1 (main@abc1234)
+
+python -m confluence_dump version check
+# Installed: confluencebridge 3.0.1 (main@abc1234)
+# Remote:    main@def5678
+# Status:    behind
+
+python -m confluence_dump version check --branch main
+~~~
+
+For an installed Python package the same commands are available as `confluencebridge --version` and `confluencebridge version check [--branch main]`. They operate independently of the Confluence exporter, PDF requirements and optional browser installation.
+
+**Offline by default:** `--version` never checks GitHub; a source checkout shows its own branch, commit and optional `, dirty`. A Git-URL install uses the immutable Git commit recorded by `uv`/`pip` (PEP 610). A regular wheel without provenance reports the release version only. The source release version is `3.0.1` from one package constant used by `setup.py`; it is **not** the Confluence page version or `manifest.json` schema version (`1.0`).
+
+**Explicit network only:** `version check` sends bounded, unauthenticated, read-only requests only to the public `SomeSunlight/ConfluenceBridge` GitHub repository. It compares exact Git commit ancestry, reporting `up to date` (exit **0**), `behind`, `ahead` or `diverged` (exit **1**), or `unknown` (exit **2**) if identity or connectivity cannot be verified. It **never** pulls, installs, modifies exports/workspaces or connects to a Confluence server. For a detached or ambiguous ref, pass `--branch main` explicitly; otherwise the GitHub default branch is used where necessary.
+
+To install and test the standalone command from a *review branch* without pulling a full development checkout:
+
+~~~bash
+# Run from a clean virtual environment; use --no-deps only if you need the
+# minimal version command rather than the full exporter and its dependencies.
+python -m pip install --no-deps "git+https://github.com/SomeSunlight/ConfluenceBridge.git@agent/2-version-check"
+confluencebridge --version
+confluencebridge version check
+confluencebridge version check --branch main
+~~~
+
+To intentionally update an installed Git-URL tool later, reinstall the desired branch/commit using the package manager (`uv tool install --force --refresh ...` or the corresponding pip command); for a source checkout, use your ordinary Git pull. **Checking never performs an update.** This follows the shared [ContextCanon Development Workflow source-provenance guidance](https://github.com/SomeSunlight/context-canon/blob/main/nodes/library/development-workflow/docs/version-provenance-python.md) and its explicit CCW-017 rule. ContextCanon onboarding of the repository is a separate task; this change does not introduce a new export orchestrator.
+
 ## Toolbox Overview (Key Files)
 - **`confluenceDumpToHTML.py`**: The main downloader. Connects to Confluence, scrapes content, and creates the folder structure.
 - **`htmlToDoc.py`**: The publisher. Converts the downloaded HTML folder into a single PDF or a Master-HTML file for LLMs.
