@@ -45,7 +45,7 @@ jobs:
           python -m pip install uv
           export UV_TOOL_DIR="${RUNNER_TEMP}/uv-tools"
           export UV_TOOL_BIN_DIR="${RUNNER_TEMP}/uv-bin"
-          uv tool install --force --no-deps --python "$(command -v python)" "git+https://github.com/SomeSunlight/ConfluenceBridge.git@${GITHUB_SHA}"
+          uv tool install --force --python "$(command -v python)" "git+https://github.com/SomeSunlight/ConfluenceBridge.git@${GITHUB_SHA}"
           actual="$("${UV_TOOL_BIN_DIR}/confluencebridge" --version)"
           echo "$actual"
           expected="confluencebridge 3.0.1 (detached@${GITHUB_SHA:0:7})"
@@ -53,7 +53,7 @@ jobs:
             echo "Expected exact installed Git revision: $expected" >&2
             exit 1
           fi
-          uv tool install --force --refresh --no-deps --python "$(command -v python)" "git+https://github.com/SomeSunlight/ConfluenceBridge.git@${GITHUB_REF_NAME}"
+          uv tool install --force --refresh --python "$(command -v python)" "git+https://github.com/SomeSunlight/ConfluenceBridge.git@${GITHUB_REF_NAME}"
           branch_version="$("${UV_TOOL_BIN_DIR}/confluencebridge" --version)"
           echo "$branch_version"
           python - "$branch_version" "${GITHUB_REF_NAME}" <<'PY'
