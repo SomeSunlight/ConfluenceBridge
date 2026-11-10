@@ -38,7 +38,7 @@ jobs:
           confluencebridge version --help
           python -m compileall -q confluence_dump
       - name: Verify actual PEP 610 Git-URL install of exact revision
-        if: runner.os == 'Linux' && matrix.python-version == '3.12'
+        if: github.event_name == 'push' && runner.os == 'Linux' && matrix.python-version == '3.12'
         shell: bash
         run: |
           set -euxo pipefail
