@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/ "null"), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html "null").
 
+## [Unreleased] — Source-version visibility (Issue #2)
+
+### Added
+- Dependency-light `confluencebridge` / `python -m confluence_dump` CLI for fully offline exact Git revision identity and an explicit, read-only `version check` against the public source branch (same statuses and exit codes as ContextCanon).
+- Focused network-mocked tests and Linux/Windows version-check CI; export and PDF entrypoints are unchanged.
+
+### Changed
+- Reconcile old `setup.py` package version `0.0.1` with the actual `3.0.1` project release baseline. The release label comes from the package constant; Confluence page/manifest versions remain independent.
+
 ## [3.0.1] - 2026-03-27
 
 Refinements for offline rendering and user experience.
